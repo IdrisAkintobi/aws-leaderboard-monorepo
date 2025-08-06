@@ -1,0 +1,27 @@
+{
+  "name": "aws-mock-app",
+  "version": "1.0.0",
+  "description": "A mock full-stack Node.js app for AWS Lambda.",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "deploy": "npm run build && samlocal build && samlocal deploy --guided"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "@types/aws-sdk": "^2.7.0",
+    "@types/node": "^20.19.9",
+    "@types/uuid": "^9.0.8",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.859.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.859.0",
+    "@aws-sdk/client-dynamodb": "^3.859.0",
+    "@aws-sdk/lib-dynamodb": "^3.859.0"
+  }
+}

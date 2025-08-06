@@ -1,0 +1,13 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "aws-mock-app-assessment"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1a2b3c4d5e6f"
+region = "eu-north-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+s3_prefix = "aws-mock-app-assessment"
+parameter_overrides = "ProjectName=\"aws-mock-app-assessment\""
+image_repositories = []

@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AWS Mock Fullstack App - Assessment Task
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'aws-mock-app-assessment'
+    Description: A unique name for the project.
+  AWSAccessKeyId:
+    Type: String
+    NoEcho: true
+  AWSSecretAccessKey:
+    Type: String
+    NoEcho: true
+  CognitoAppClientSecret:
+    Type: String
+    NoEcho: true
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
+        AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
+        COGNITO_APP_CLIENT_SECRET: !Ref CognitoAppClientSecret
+        AWS_DEFAULT_REGION: eu-north-1
+        COGNITO_APP_CLIENT_ID: 54p32d5n5j5m2t0gt45e9og8vo
+        LEADERBOARD_TABLE_NAME: leaderboard
+        WEBSOCKET_API_ENDPOINT: https://gdjtdhxwkf.execute-api.eu-north-1.amazonaws.com/production
+    Tracing: Active
+
+Resources:
+  LoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: dist/handler/authHandler.loginHandler
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'cognito-idp:*'
+            Resource: '*'
+      Events:
+        LoginApi:
+          Type: Api
+          Properties:
+            Path: /auth/login
+            Method: POST
+
+  RegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: dist/handler/authHandler.registerHandler
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'cognito-idp:*'
+            Resource: '*'
+      Events:
+        RegisterApi:
+          Type: Api
+          Properties:
+            Path: /auth/register
+            Method: POST
+
+  SubmitScoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: dist/handler/scoreHandler.submitScoreHandler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LeaderboardTable
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'execute-api:ManageConnections'
+            Resource: 'arn:aws:execute-api:eu-north-1:*:*/@connections/*'
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'cognito-idp:*'
+            Resource: '*'
+      Events:
+        SubmitScoreApi:
+          Type: Api
+          Properties:
+            Path: /scores/submit
+            Method: POST
+
+  GetLeaderboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: dist/handler/scoreHandler.getLeaderboardHandler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LeaderboardTable
+      Events:
+        GetLeaderboardApi:
+          Type: Api
+          Properties:
+            Path: /scores/leaderboard
+            Method: GET
+
+  LeaderboardTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: leaderboard
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  ApiBaseUrl:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  LoginEndpoint:
+    Description: "Login endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/auth/login"
+  RegisterEndpoint:
+    Description: "Register endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/auth/register"
+  SubmitScoreEndpoint:
+    Description: "Submit score endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/scores/submit"
+  GetLeaderboardEndpoint:
+    Description: "Get leaderboard endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/scores/leaderboard"
