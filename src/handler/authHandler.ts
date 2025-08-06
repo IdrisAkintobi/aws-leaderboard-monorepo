@@ -1,12 +1,9 @@
 import {
-  CognitoIdentityProviderClient,
   InitiateAuthCommand,
   SignUpCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { APIGatewayProxyHandler } from "aws-lambda";
-import { computeSecretHash } from "../utils/utils.js";
-
-const cognitoClient = new CognitoIdentityProviderClient({});
+import { cognitoClient, computeSecretHash } from "../utils/utils.js";
 
 export const loginHandler: APIGatewayProxyHandler = async (event) => {
   const { email, password } = JSON.parse(event.body || "{}");

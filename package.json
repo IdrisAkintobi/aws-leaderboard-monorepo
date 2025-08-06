@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "deploy": "npm run build && samlocal build && samlocal deploy --guided"
+    "predeploy": "npm run build",
+    "deploy:local": "samlocal build --config-env local -t template-local.yaml && samlocal deploy --config-env local -t template-local.yaml --guided",
+    "deploy": "samlocal build --config-env prod -t template-prod.yaml && samlocal deploy --config-env prod -t template-prod.yaml --guided"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.152",

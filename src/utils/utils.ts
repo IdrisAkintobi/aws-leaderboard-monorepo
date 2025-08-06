@@ -2,12 +2,16 @@ import {
   CognitoIdentityProviderClient,
   DescribeUserPoolClientCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { createHmac } from "node:crypto";
-
-const cognitoClient = new CognitoIdentityProviderClient({});
 
 // Cache for the client secret
 let cachedClientSecret = process.env.COGNITO_APP_CLIENT_SECRET;
+
+const dynamoDbClient = new DynamoDBClient({});
+export const cognitoClient = new CognitoIdentityProviderClient({});
+export const dynamoDbDocClient = DynamoDBDocumentClient.from(dynamoDbClient);
 
 const getCognitoAppClientSecret = async () => {
   if (cachedClientSecret) {

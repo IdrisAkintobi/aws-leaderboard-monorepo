@@ -1,7 +1,7 @@
 version = 0.1
-[default]
-[default.deploy]
-[default.deploy.parameters]
+[local]
+[local.deploy]
+[local.deploy.parameters]
 stack_name = "aws-mock-app-local"
 s3_bucket = "sam-cli-managed-default" # Default bucket for SAM CLI local deployments
 s3_prefix = "aws-mock-app-local"
@@ -12,3 +12,16 @@ image_repositories = []
 resolve_s3 = true
 disable_rollback = true
 parameter_overrides = "ProjectName=\"aws-mock-app-local\" LeaderboardTableName=\"leaderboard-local\""
+
+[prod]
+[prod.deploy]
+[prod.deploy.parameters]
+stack_name = "aws-mock-app-assessment"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1a2b3c4d5e6f"
+region = "eu-north-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+s3_prefix = "aws-mock-app-assessment"
+parameter_overrides = "ProjectName=\"aws-mock-app-assessment\""
+image_repositories = []

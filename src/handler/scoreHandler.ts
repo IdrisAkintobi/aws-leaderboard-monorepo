@@ -2,28 +2,15 @@ import {
   ApiGatewayManagementApiClient,
   PostToConnectionCommand,
 } from "@aws-sdk/client-apigatewaymanagementapi";
-import {
-  CognitoIdentityProviderClient,
-  GetUserCommand,
-} from "@aws-sdk/client-cognito-identity-provider";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import {
-  DynamoDBDocumentClient,
-  PutCommand,
-  QueryCommand,
-  ScanCommand,
-} from "@aws-sdk/lib-dynamodb";
+import { GetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
+import { PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyHandler } from "aws-lambda";
 import { randomUUID } from "node:crypto";
+import { cognitoClient, dynamoDbDocClient } from "../utils/utils.js";
 
-const dynamoDbClient = new DynamoDBClient({});
-const dynamoDbDocClient = DynamoDBDocumentClient.from(dynamoDbClient);
-const cognitoClient = new CognitoIdentityProviderClient({});
-const apiGwManagementApiClient = new ApiGatewayManagementApiClient(
-  process.env.WEBSOCKET_API_ENDPOINT
-    ? { endpoint: process.env.WEBSOCKET_API_ENDPOINT }
-    : {}
-);
+const apiGwManagementApiClient = new ApiGatewayManagementApiClient({
+  endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
+});
 
 export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
   const { score } = JSON.parse(event.body || "{}");
