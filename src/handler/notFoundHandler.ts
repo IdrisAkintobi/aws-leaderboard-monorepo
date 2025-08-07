@@ -1,13 +1,6 @@
-
 import type { APIGatewayProxyHandler } from "aws-lambda";
+import { responseWithCors } from "../utils/utils.js";
 
 export const handler: APIGatewayProxyHandler = async () => {
-  return {
-    statusCode: 404,
-    body: JSON.stringify({ message: "Not Found" }),
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Credentials": true,
-    },
-  };
+  return responseWithCors(404, { message: "Not Found" });
 };

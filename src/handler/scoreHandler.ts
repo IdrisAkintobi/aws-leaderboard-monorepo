@@ -6,7 +6,11 @@ import { GetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyHandler } from "aws-lambda";
 import { randomUUID } from "node:crypto";
-import { cognitoClient, dynamoDbDocClient } from "../utils/utils.js";
+import {
+  cognitoClient,
+  dynamoDbDocClient,
+  responseWithCors,
+} from "../utils/utils.js";
 
 const apiGwManagementApiClient = new ApiGatewayManagementApiClient({
   endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
@@ -17,23 +21,17 @@ export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
   const authHeader = event.headers.Authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({
-        error: "Authorization header must be in the format: Bearer <token>",
-      }),
-    };
+    return responseWithCors(400, {
+      error: "Authorization header must be in the format: Bearer <token>",
+    });
   }
 
   const accessToken = authHeader.split(" ")[1];
 
   if (typeof score !== "number" || isNaN(score) || score < 0) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({
-        error: "A valid, non-negative score is required.",
-      }),
-    };
+    return responseWithCors(400, {
+      error: "A valid, non-negative score is required.",
+    });
   }
 
   try {
@@ -48,12 +46,9 @@ export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
     )?.Value;
 
     if (!userId || !userName) {
-      return {
-        statusCode: 401,
-        body: JSON.stringify({
-          error: "Could not retrieve user information from access token.",
-        }),
-      };
+      return responseWithCors(401, {
+        error: "Could not retrieve user information from access token.",
+      });
     }
 
     const newScoreId = randomUUID();
@@ -94,15 +89,9 @@ export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
       }
     }
 
-    return {
-      statusCode: 201,
-      body: JSON.stringify({ message: "Score submitted successfully!" }),
-    };
+    return responseWithCors(201, { message: "Score submitted successfully!" });
   } catch (error: any) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
-    };
+    return responseWithCors(500, { error: error.message });
   }
 };
 
@@ -124,12 +113,9 @@ export const getLeaderboardHandlerIndexed: APIGatewayProxyHandler = async (
     const data = await dynamoDbDocClient.send(queryCommand);
     const topScore = data.Items && data.Items.length > 0 ? data.Items[0] : null;
 
-    return { statusCode: 200, body: JSON.stringify({ topScore }) };
+    return responseWithCors(200, { topScore });
   } catch (error: any) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
-    };
+    return responseWithCors(500, { error: error.message });
   }
 };
 
@@ -156,11 +142,8 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
 
     const topScore = sortedItems[0];
 
-    return { statusCode: 200, body: JSON.stringify({ topScore }) };
+    return responseWithCors(200, { topScore });
   } catch (error: any) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
-    };
+    return responseWithCors(500, { error: error.message });
   }
 };

@@ -23,6 +23,14 @@ Parameters:
 # === Globals for LocalStack ===
 # =======================================================================
 Globals:
+  Api:
+    Cors:
+      AllowOrigin: "'http://localhost:5173'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowMethods: "'POST,GET,OPTIONS,PUT,DELETE'"
+      AllowCredentials: true
+      MaxAge: "'3600'"
+
   Function:
     Runtime: nodejs20.x
     Timeout: 10
@@ -94,6 +102,31 @@ Resources:
           Type: Api
           Properties:
             Path: /auth/register
+            Method: POST
+
+  VerifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: dist/handler/authHandler.verifyHandler
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'cognito-idp:*'
+            Resource: !Sub 'arn:aws:cognito-idp:us-east-1:000000000000:userpool/*'
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+            Resource: '*'
+      Events:
+        VerifyApi:
+                    Type: Api
+          Properties:
+            Path: /auth/verify
             Method: POST
 
   SubmitScoreFunction:
@@ -368,6 +401,7 @@ Outputs:
       Available Endpoints:
       POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/register
       POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/login
+      POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/verify
       POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/submit
       GET  https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/leaderboard
       

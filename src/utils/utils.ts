@@ -4,13 +4,21 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import type { APIGatewayProxyResult } from "aws-lambda";
 import { createHmac } from "node:crypto";
 
 // Cache for the client secret
 let cachedClientSecret = process.env.COGNITO_APP_CLIENT_SECRET;
+const config = {
+  region: process.env.TASK_REGION!,
+  credentials: {
+    accessKeyId: process.env.TASK_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.TASK_SECRET_ACCESS_KEY!,
+  },
+};
 
-const dynamoDbClient = new DynamoDBClient({});
-export const cognitoClient = new CognitoIdentityProviderClient({});
+const dynamoDbClient = new DynamoDBClient(config);
+export const cognitoClient = new CognitoIdentityProviderClient(config);
 export const dynamoDbDocClient = DynamoDBDocumentClient.from(dynamoDbClient);
 
 const getCognitoAppClientSecret = async () => {
@@ -45,3 +53,17 @@ export const computeSecretHash = async (username: string): Promise<string> => {
     .update(username + process.env.COGNITO_APP_CLIENT_ID!)
     .digest("base64");
 };
+
+export function responseWithCors(
+  statusCode: number,
+  body: unknown
+): APIGatewayProxyResult {
+  return {
+    statusCode,
+    headers: {
+      "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN!,
+      "Access-Control-Allow-Credentials": "true",
+    },
+    body: JSON.stringify(body),
+  };
+}

@@ -17,11 +17,11 @@ parameter_overrides = "ProjectName=\"aws-mock-app-local\" LeaderboardTableName=\
 [prod.deploy]
 [prod.deploy.parameters]
 stack_name = "aws-mock-app-assessment"
-s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1a2b3c4d5e6f"
+s3_bucket = "aws-sam-cli-source-bucket"
 region = "eu-north-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 resolve_s3 = true
 s3_prefix = "aws-mock-app-assessment"
-parameter_overrides = "ProjectName=\"aws-mock-app-assessment\""
+parameter_overrides = "ProjectName=\"aws-mock-app-assessment\" TaskAccessKeyId=\"AKIA474VTUGHK62Y2HHT\" TaskSecretAccessKey=\"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\" CognitoAppClientSecret=\"dnel7s515mgqk74rurtt1rhqsb0p21kgmu1nf1jdlcfvo04lvde\""
 image_repositories = []

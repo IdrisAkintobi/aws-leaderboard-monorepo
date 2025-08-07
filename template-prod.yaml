@@ -8,30 +8,43 @@ Parameters:
     Type: String
     Default: 'aws-mock-app-assessment'
     Description: A unique name for the project.
-  AWSAccessKeyId:
+
+  TaskAccessKeyId:
     Type: String
-    NoEcho: true
-  AWSSecretAccessKey:
+    NoEcho: false
+
+  TaskSecretAccessKey:
     Type: String
-    NoEcho: true
+    NoEcho: false
+
   CognitoAppClientSecret:
     Type: String
-    NoEcho: true
+    NoEcho: false
+
 
 Globals:
+  Api:
+    Cors:
+      AllowOrigin: "'http://localhost:5173'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowMethods: "'POST,GET,OPTIONS,PUT,DELETE'"
+      AllowCredentials: true
+      MaxAge: "'3600'"
+
   Function:
     Runtime: nodejs20.x
     Timeout: 10
     MemorySize: 128
     Environment:
       Variables:
-        AWS_ACCESS_KEY_ID: !Ref AWSAccessKeyId
-        AWS_SECRET_ACCESS_KEY: !Ref AWSSecretAccessKey
+        TASK_ACCESS_KEY_ID: !Ref TaskAccessKeyId
+        TASK_SECRET_ACCESS_KEY: !Ref TaskSecretAccessKey
+        TASK_REGION: eu-north-1
         COGNITO_APP_CLIENT_SECRET: !Ref CognitoAppClientSecret
-        AWS_DEFAULT_REGION: eu-north-1
         COGNITO_APP_CLIENT_ID: 54p32d5n5j5m2t0gt45e9og8vo
         LEADERBOARD_TABLE_NAME: leaderboard
         WEBSOCKET_API_ENDPOINT: https://gdjtdhxwkf.execute-api.eu-north-1.amazonaws.com/production
+        ALLOWED_ORIGIN: http://localhost:5173
     Tracing: Active
 
 Resources:
@@ -71,6 +84,24 @@ Resources:
             Path: /auth/register
             Method: POST
 
+  VerifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: dist/handler/authHandler.verifyHandler
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action:
+              - 'cognito-idp:*'
+            Resource: '*'
+      Events:
+        VerifyApi:
+          Type: Api
+          Properties:
+            Path: /auth/verify
+            Method: POST
+
   SubmitScoreFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -93,8 +124,8 @@ Resources:
         SubmitScoreApi:
           Type: Api
           Properties:
-            Path: /scores/submit
-            Method: POST
+            Path: /{proxy+}
+            Method: ANY
 
   GetLeaderboardFunction:
     Type: AWS::Serverless::Function
@@ -133,6 +164,9 @@ Outputs:
   RegisterEndpoint:
     Description: "Register endpoint"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/auth/register"
+  VerifyEndpoint:
+    Description: "Verify endpoint"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/auth/verify"
   SubmitScoreEndpoint:
     Description: "Submit score endpoint"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/scores/submit"

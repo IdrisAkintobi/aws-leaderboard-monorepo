@@ -1,9 +1,14 @@
 import {
+  ConfirmSignUpCommand,
   InitiateAuthCommand,
   SignUpCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { APIGatewayProxyHandler } from "aws-lambda";
-import { cognitoClient, computeSecretHash } from "../utils/utils.js";
+import {
+  cognitoClient,
+  computeSecretHash,
+  responseWithCors,
+} from "../utils/utils.js";
 
 export const loginHandler: APIGatewayProxyHandler = async (event) => {
   const { email, password } = JSON.parse(event.body || "{}");
@@ -29,15 +34,9 @@ export const loginHandler: APIGatewayProxyHandler = async (event) => {
 
   try {
     const response = await cognitoClient.send(command);
-    return {
-      statusCode: 200,
-      body: JSON.stringify(response.AuthenticationResult),
-    };
+    return responseWithCors(200, response.AuthenticationResult);
   } catch (error: any) {
-    return {
-      statusCode: 401,
-      body: JSON.stringify({ error: error.message }),
-    };
+    return responseWithCors(401, { error: error.message });
   }
 };
 
@@ -45,10 +44,7 @@ export const registerHandler: APIGatewayProxyHandler = async (event) => {
   const { email, password, username, name } = JSON.parse(event.body || "{}");
 
   if (!email || !password || !username || !name) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "All fields are required." }),
-    };
+    return responseWithCors(400, { error: "All fields are required." });
   }
 
   const secretHash = await computeSecretHash(email);
@@ -67,16 +63,34 @@ export const registerHandler: APIGatewayProxyHandler = async (event) => {
 
   try {
     await cognitoClient.send(command);
-    return {
-      statusCode: 201,
-      body: JSON.stringify({
-        message: "User registered successfully. Please confirm your email.",
-      }),
-    };
+    return responseWithCors(201, {
+      message: "User registered successfully. Please confirm your email.",
+    });
   } catch (error: any) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
-    };
+    return responseWithCors(500, { error: error.message });
+  }
+};
+
+export const verifyHandler: APIGatewayProxyHandler = async (event) => {
+  const { email, code } = JSON.parse(event.body || "{}");
+
+  if (!email || !code) {
+    return responseWithCors(400, { error: "Email and code are required." });
+  }
+
+  const secretHash = await computeSecretHash(email);
+
+  const command = new ConfirmSignUpCommand({
+    ClientId: process.env.COGNITO_APP_CLIENT_ID,
+    Username: email,
+    ConfirmationCode: code,
+    SecretHash: secretHash,
+  });
+
+  try {
+    await cognitoClient.send(command);
+    return responseWithCors(200, { message: "Email confirmed successfully." });
+  } catch (error: any) {
+    return responseWithCors(500, { error: error.message });
   }
 };
