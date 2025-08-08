@@ -43,6 +43,7 @@ Globals:
         AWS_DEFAULT_REGION: us-east-1
         COGNITO_USER_POOL_ID: !Ref CognitoUserPool
         COGNITO_APP_CLIENT_ID: !Ref CognitoUserPoolClient
+        ALLOWED_ORIGIN: http://localhost:5173
     Tracing: Active
 
 # =======================================================================

@@ -24,7 +24,7 @@ Parameters:
 Globals:
   Api:
     Cors:
-      AllowOrigin: "'http://localhost:5173'"
+      AllowOrigin: "'http://vue-app-stack-vue-app.s3-website-us-west-2.amazonaws.com'"
       AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-WS-Connection-Id'"
       AllowMethods: "'POST,GET,OPTIONS,PUT,DELETE'"
       AllowCredentials: true
@@ -43,7 +43,7 @@ Globals:
         COGNITO_APP_CLIENT_ID: 54p32d5n5j5m2t0gt45e9og8vo
         LEADERBOARD_TABLE_NAME: leaderboard
         WEBSOCKET_API_ENDPOINT: https://gdjtdhxwkf.execute-api.eu-north-1.amazonaws.com/production
-        ALLOWED_ORIGIN: http://localhost:5173
+        ALLOWED_ORIGIN: http://vue-app-stack-vue-app.s3-website-us-west-2.amazonaws.com
     Tracing: Active
 
 Resources:
