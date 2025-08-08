@@ -1,6 +1,6 @@
 import { PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
 import { GetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
-import { PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyHandler } from "aws-lambda";
 import { randomUUID } from "node:crypto";
 import { Logger } from "../utils/logger.js";
@@ -33,7 +33,7 @@ interface ScoreItem {
 // Constants
 const LEADERBOARD_PARTITION = "leaderboard";
 const HIGH_SCORE_THRESHOLD = 1000;
-const TOP_SCORES_LIMIT = 10;
+// const SCAN_LIMIT = 10_000;
 
 // Function to get user information from Cognito
 const getUserInfo = async (
@@ -200,39 +200,6 @@ export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
   }
 };
 
-export const getLeaderboardHandlerIndexed: APIGatewayProxyHandler = async (
-  event
-) => {
-  // Validate environment variables
-  EnvironmentValidator.getInstance().validate();
-
-  const requestId = event.requestContext.requestId;
-
-  try {
-    const queryCommand = new QueryCommand({
-      TableName: process.env.LEADERBOARD_TABLE_NAME,
-      IndexName: "ScoreIndex",
-      KeyConditionExpression: "leaderboard_partition = :partition",
-      ExpressionAttributeValues: {
-        ":partition": LEADERBOARD_PARTITION,
-      },
-      ScanIndexForward: false,
-      Limit: TOP_SCORES_LIMIT,
-    });
-
-    const data = await dynamoDbDocClient.send(queryCommand);
-    const topScores = (data.Items as ScoreItem[]) || [];
-
-    return responseWithCors(200, { topScores });
-  } catch (error: any) {
-    Logger.error("Indexed leaderboard request failed", error, {
-      action: "get_leaderboard_indexed_error",
-      requestId,
-    });
-    return responseWithCors(500, { error: error.message });
-  }
-};
-
 export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
   // Validate environment variables
   EnvironmentValidator.getInstance().validate();
@@ -246,20 +213,21 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
       ExpressionAttributeValues: {
         ":partition": LEADERBOARD_PARTITION,
       },
-      Limit: TOP_SCORES_LIMIT,
     });
 
     const data = await dynamoDbDocClient.send(scanCommand);
 
     if (!data.Items || data.Items.length === 0) {
-      return responseWithCors(200, { topScores: [] });
+      return responseWithCors(200, { topScore: {} });
     }
 
     // Sort items by score in descending order and limit
-    const topScores = (data.Items as ScoreItem[])
-      .sort((a, b) => (b.score || 0) - (a.score || 0))
-      .slice(0, TOP_SCORES_LIMIT);
-    return responseWithCors(200, { topScores });
+    const topScores = (data.Items as ScoreItem[]).sort(
+      (a, b) => (b.score || 0) - (a.score || 0)
+    );
+    const topScore = topScores.length > 0 ? topScores[0] : {};
+
+    return responseWithCors(200, { topScore });
   } catch (error: any) {
     Logger.error("Leaderboard request failed", error, {
       action: "get_leaderboard_error",
