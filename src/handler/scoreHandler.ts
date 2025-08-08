@@ -38,7 +38,7 @@ const SCAN_LIMIT = 10_000;
 // Function to get user information from Cognito
 const getUserInfo = async (
   accessToken: string,
-  requestId?: string | undefined
+  requestId: string
 ): Promise<UserInfo> => {
   try {
     const userResponse = await cognitoClient.send(
@@ -94,7 +94,7 @@ const getUserInfo = async (
 const saveScore = async (
   userInfo: UserInfo,
   score: number,
-  requestId?: string | undefined
+  requestId: string
 ): Promise<void> => {
   try {
     const scoreItem: ScoreItem = {
@@ -127,7 +127,7 @@ const sendHighScoreNotification = async (
   connectionId: string,
   userName: string,
   score: number,
-  requestId?: string | undefined
+  requestId: string
 ): Promise<void> => {
   try {
     const websocketMessage = JSON.stringify({
@@ -161,7 +161,7 @@ export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
   EnvironmentValidator.getInstance().validate();
 
   const requestId = event.requestContext.requestId;
-  const action = "submit_score_error";
+  const action = "submit_score";
 
   try {
     // Validate request
@@ -205,6 +205,7 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
   EnvironmentValidator.getInstance().validate();
 
   const requestId = event.requestContext.requestId;
+  const action = "get_leaderboard";
 
   try {
     const scanCommand = new ScanCommand({
@@ -231,7 +232,7 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
     return responseWithCors(200, { topScore });
   } catch (error: any) {
     Logger.error("Leaderboard request failed", error, {
-      action: "get_leaderboard_error",
+      action,
       requestId,
     });
     return responseWithCors(500, { error: error.message });
