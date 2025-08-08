@@ -2,7 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   AWS Mock Fullstack App - LocalStack Edition
-
   SAM template for LocalStack deployment using samlocal deploy.
 
 # =======================================================================
@@ -26,7 +25,7 @@ Globals:
   Api:
     Cors:
       AllowOrigin: "'http://localhost:5173'"
-      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-WS-Connection-Id'"
       AllowMethods: "'POST,GET,OPTIONS,PUT,DELETE'"
       AllowCredentials: true
       MaxAge: "'3600'"
@@ -124,7 +123,7 @@ Resources:
             Resource: '*'
       Events:
         VerifyApi:
-                    Type: Api
+          Type: Api
           Properties:
             Path: /auth/verify
             Method: POST
@@ -189,26 +188,6 @@ Resources:
           Properties:
             Path: /scores/leaderboard
             Method: GET
-
-  NotFoundFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: ./
-      Handler: dist/handler/notFoundHandler.handler
-      Policies:
-        - Statement:
-            Effect: Allow
-            Action:
-              - 'logs:CreateLogGroup'
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
-            Resource: '*'
-      Events:
-        CatchAllApi:
-          Type: Api
-          Properties:
-            Path: /{proxy+}
-            Method: ANY
 
   # -------------------------------------------------------------------
   # DynamoDB Table

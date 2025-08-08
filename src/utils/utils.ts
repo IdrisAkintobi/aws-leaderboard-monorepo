@@ -1,3 +1,4 @@
+import { ApiGatewayManagementApiClient } from "@aws-sdk/client-apigatewaymanagementapi";
 import {
   CognitoIdentityProviderClient,
   DescribeUserPoolClientCommand,
@@ -6,10 +7,11 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyResult } from "aws-lambda";
 import { createHmac } from "node:crypto";
+import { Logger } from "./logger.js";
 
 // Cache for the client secret
 let cachedClientSecret = process.env.COGNITO_APP_CLIENT_SECRET;
-const config = {
+export const externalServiceConfig = {
   region: process.env.TASK_REGION!,
   credentials: {
     accessKeyId: process.env.TASK_ACCESS_KEY_ID!,
@@ -17,9 +19,15 @@ const config = {
   },
 };
 
-const dynamoDbClient = new DynamoDBClient(config);
-export const cognitoClient = new CognitoIdentityProviderClient(config);
+const dynamoDbClient = new DynamoDBClient(externalServiceConfig);
+export const cognitoClient = new CognitoIdentityProviderClient(
+  externalServiceConfig
+);
 export const dynamoDbDocClient = DynamoDBDocumentClient.from(dynamoDbClient);
+export const apiGwManagementApiClient = new ApiGatewayManagementApiClient({
+  endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
+  ...externalServiceConfig,
+});
 
 const getCognitoAppClientSecret = async () => {
   if (cachedClientSecret) {
@@ -67,3 +75,36 @@ export function responseWithCors(
     body: JSON.stringify(body),
   };
 }
+
+export const handleError = (error: any, action: string, requestId?: string) => {
+  const context = { action, requestId };
+
+  if (error.name === "InvalidToken") {
+    Logger.warn("Invalid token error", context);
+    return responseWithCors(401, { error: error.message });
+  }
+
+  if (error.name === "AuthenticationError") {
+    Logger.warn("Authentication error", context);
+    return responseWithCors(401, { error: error.message });
+  }
+
+  if (
+    error.name === "UserNotFoundException" ||
+    error.name === "NotAuthorizedException"
+  ) {
+    return responseWithCors(401, { error: "Invalid credentials." });
+  }
+
+  if (error.name === "UsernameExistsException") {
+    return responseWithCors(409, {
+      error: "User with this email already exists.",
+    });
+  }
+
+  if (error.name === "CodeMismatchException") {
+    return responseWithCors(400, { error: "Invalid verification code." });
+  }
+  Logger.error("Unhandled error", error, context);
+  return responseWithCors(500, { error: error.message });
+};

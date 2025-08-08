@@ -1,149 +1,270 @@
-import {
-  ApiGatewayManagementApiClient,
-  PostToConnectionCommand,
-} from "@aws-sdk/client-apigatewaymanagementapi";
+import { PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
 import { GetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyHandler } from "aws-lambda";
 import { randomUUID } from "node:crypto";
+import { Logger } from "../utils/logger.js";
 import {
+  apiGwManagementApiClient,
   cognitoClient,
   dynamoDbDocClient,
+  handleError,
   responseWithCors,
 } from "../utils/utils.js";
+import {
+  EnvironmentValidator,
+  validateSubmitScoreRequestBody,
+} from "../utils/validators.js";
 
-const apiGwManagementApiClient = new ApiGatewayManagementApiClient({
-  endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
-});
+interface UserInfo {
+  userId: string;
+  userName: string;
+}
 
-export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
-  const { score } = JSON.parse(event.body || "{}");
-  const authHeader = event.headers.Authorization;
+interface ScoreItem {
+  id: string;
+  user_id: string;
+  user_name: string;
+  score: number;
+  timestamp: number;
+  leaderboard_partition: string;
+}
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return responseWithCors(400, {
-      error: "Authorization header must be in the format: Bearer <token>",
-    });
-  }
+// Constants
+const LEADERBOARD_PARTITION = "leaderboard";
+const HIGH_SCORE_THRESHOLD = 1000;
+const TOP_SCORES_LIMIT = 10;
 
-  const accessToken = authHeader.split(" ")[1];
-
-  if (typeof score !== "number" || isNaN(score) || score < 0) {
-    return responseWithCors(400, {
-      error: "A valid, non-negative score is required.",
-    });
-  }
-
+// Function to get user information from Cognito
+const getUserInfo = async (
+  accessToken: string,
+  requestId?: string | undefined
+): Promise<UserInfo> => {
   try {
     const userResponse = await cognitoClient.send(
       new GetUserCommand({ AccessToken: accessToken })
     );
-    const userId = userResponse.UserAttributes?.find(
-      (attr) => attr.Name === "sub"
-    )?.Value;
-    const userName = userResponse.UserAttributes?.find(
+
+    const attributes = userResponse.UserAttributes || [];
+    const userId = attributes.find((attr) => attr.Name === "sub")?.Value;
+    const userName = attributes.find(
       (attr) => attr.Name === "preferred_username"
     )?.Value;
 
     if (!userId || !userName) {
-      return responseWithCors(401, {
-        error: "Could not retrieve user information from access token.",
-      });
+      throw new Error("Could not retrieve user information from access token.");
+    }
+    return { userId, userName };
+  } catch (error: any) {
+    Logger.error("Failed to get user info", error, {
+      action: "get_user_info",
+      requestId,
+    });
+
+    // Handle expired token
+    if (
+      error.name === "NotAuthorizedException" ||
+      error.message?.includes("Access Token has expired") ||
+      error.message?.includes("token is expired")
+    ) {
+      const invalidTokenError = new Error(
+        "Access token has expired. Please log in again."
+      );
+      invalidTokenError.name = "InvalidToken";
+      throw invalidTokenError;
     }
 
-    const newScoreId = randomUUID();
-    const timestamp = Math.floor(Date.now() / 1000);
+    // Handle other authentication-related errors
+    if (
+      error.name === "UserNotConfirmedException" ||
+      error.name === "UserNotFoundException" ||
+      error.name === "InvalidParameterException"
+    ) {
+      const authError = new Error(
+        `Invalid or unauthorized access token: ${error.name}`
+      );
+      authError.name = "AuthenticationError";
+      throw authError;
+    }
+
+    throw error;
+  }
+};
+
+const saveScore = async (
+  userInfo: UserInfo,
+  score: number,
+  requestId?: string | undefined
+): Promise<void> => {
+  try {
+    const scoreItem: ScoreItem = {
+      id: randomUUID(),
+      user_id: userInfo.userId,
+      user_name: userInfo.userName,
+      score,
+      timestamp: Math.floor(Date.now() / 1000),
+      leaderboard_partition: LEADERBOARD_PARTITION,
+    };
 
     const putCommand = new PutCommand({
       TableName: process.env.LEADERBOARD_TABLE_NAME,
-      Item: {
-        id: newScoreId,
-        user_id: userId,
-        user_name: userName,
-        score: score,
-        timestamp: timestamp,
-        leaderboard_partition: "leaderboard",
-      },
+      Item: scoreItem,
     });
 
     await dynamoDbDocClient.send(putCommand);
+  } catch (error) {
+    Logger.error("Failed to save score", error, {
+      action: "save_score",
+      requestId,
+      userId: userInfo.userId,
+      score,
+    });
+    throw error;
+  }
+};
 
-    if (score > 1000) {
-      const connectionId = event.requestContext.connectionId || "test-id";
-      if (connectionId) {
-        const websocketMessage = JSON.stringify({
-          message: "realtime-update",
-          data: {
-            user_name: userName,
-            score: score,
-            notification: "Congratulations! Your score is over 1000!",
-          },
-        });
+const sendHighScoreNotification = async (
+  connectionId: string,
+  userName: string,
+  score: number,
+  requestId?: string | undefined
+): Promise<void> => {
+  try {
+    const websocketMessage = JSON.stringify({
+      message: "realtime-update",
+      data: {
+        user_name: userName,
+        score,
+        notification: `Congratulations! Your score of ${score} is over ${HIGH_SCORE_THRESHOLD}!`,
+      },
+    });
 
-        const postToConnectionCommand = new PostToConnectionCommand({
-          ConnectionId: connectionId,
-          Data: websocketMessage,
-        });
+    const postToConnectionCommand = new PostToConnectionCommand({
+      ConnectionId: connectionId,
+      Data: websocketMessage,
+    });
 
-        await apiGwManagementApiClient.send(postToConnectionCommand);
-      }
+    await apiGwManagementApiClient.send(postToConnectionCommand);
+  } catch (error) {
+    Logger.error("Failed to send high score notification", error, {
+      action: "send_notification",
+      requestId,
+      userName,
+      connectionId,
+    });
+  }
+};
+
+// Main handlers
+export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
+  // Validate environment variables
+  EnvironmentValidator.getInstance().validate();
+
+  const requestId = event.requestContext.requestId;
+  const action = "submit_score_error";
+
+  try {
+    // Validate request
+    const validation = validateSubmitScoreRequestBody(event);
+    if (!validation.isValid) {
+      return responseWithCors(400, { error: validation.error });
     }
 
+    const { score, token } = validation.data!;
+
+    // Get user information
+    const userInfo = await getUserInfo(token, requestId);
+
+    // Save score to database
+    await saveScore(userInfo, score, requestId);
+
+    // Send high score notification if applicable
+    if (score > HIGH_SCORE_THRESHOLD) {
+      const connectionId = event.headers["x-ws-connection-id"];
+      if (connectionId) {
+        await sendHighScoreNotification(
+          connectionId,
+          userInfo.userName,
+          score,
+          requestId
+        );
+      }
+    }
     return responseWithCors(201, { message: "Score submitted successfully!" });
   } catch (error: any) {
-    return responseWithCors(500, { error: error.message });
+    Logger.error("Score submission failed", error, {
+      action,
+      requestId,
+    });
+    return handleError(error, action, requestId);
   }
 };
 
 export const getLeaderboardHandlerIndexed: APIGatewayProxyHandler = async (
   event
 ) => {
-  const queryCommand = new QueryCommand({
-    TableName: process.env.LEADERBOARD_TABLE_NAME,
-    IndexName: "ScoreIndex",
-    KeyConditionExpression: "leaderboard_partition = :partition",
-    ExpressionAttributeValues: {
-      ":partition": "leaderboard",
-    },
-    ScanIndexForward: false,
-    Limit: 1,
-  });
+  // Validate environment variables
+  EnvironmentValidator.getInstance().validate();
+
+  const requestId = event.requestContext.requestId;
 
   try {
-    const data = await dynamoDbDocClient.send(queryCommand);
-    const topScore = data.Items && data.Items.length > 0 ? data.Items[0] : null;
+    const queryCommand = new QueryCommand({
+      TableName: process.env.LEADERBOARD_TABLE_NAME,
+      IndexName: "ScoreIndex",
+      KeyConditionExpression: "leaderboard_partition = :partition",
+      ExpressionAttributeValues: {
+        ":partition": LEADERBOARD_PARTITION,
+      },
+      ScanIndexForward: false,
+      Limit: TOP_SCORES_LIMIT,
+    });
 
-    return responseWithCors(200, { topScore });
+    const data = await dynamoDbDocClient.send(queryCommand);
+    const topScores = (data.Items as ScoreItem[]) || [];
+
+    return responseWithCors(200, { topScores });
   } catch (error: any) {
+    Logger.error("Indexed leaderboard request failed", error, {
+      action: "get_leaderboard_indexed_error",
+      requestId,
+    });
     return responseWithCors(500, { error: error.message });
   }
 };
 
 export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
-  const scanCommand = new ScanCommand({
-    TableName: process.env.LEADERBOARD_TABLE_NAME,
-    FilterExpression: "leaderboard_partition = :partition",
-    ExpressionAttributeValues: {
-      ":partition": "leaderboard",
-    },
-  });
+  // Validate environment variables
+  EnvironmentValidator.getInstance().validate();
+
+  const requestId = event.requestContext.requestId;
 
   try {
+    const scanCommand = new ScanCommand({
+      TableName: process.env.LEADERBOARD_TABLE_NAME,
+      FilterExpression: "leaderboard_partition = :partition",
+      ExpressionAttributeValues: {
+        ":partition": LEADERBOARD_PARTITION,
+      },
+      Limit: TOP_SCORES_LIMIT,
+    });
+
     const data = await dynamoDbDocClient.send(scanCommand);
 
     if (!data.Items || data.Items.length === 0) {
-      return { statusCode: 200, body: JSON.stringify({ topScore: null }) };
+      return responseWithCors(200, { topScores: [] });
     }
 
-    // Sort items by score in descending order (assuming 'score' is the field)
-    const sortedItems = data.Items.sort((a, b) => {
-      return (b.score || 0) - (a.score || 0); // Replace 'score' with actual attribute name if different
-    });
-
-    const topScore = sortedItems[0];
-
-    return responseWithCors(200, { topScore });
+    // Sort items by score in descending order and limit
+    const topScores = (data.Items as ScoreItem[])
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .slice(0, TOP_SCORES_LIMIT);
+    return responseWithCors(200, { topScores });
   } catch (error: any) {
+    Logger.error("Leaderboard request failed", error, {
+      action: "get_leaderboard_error",
+      requestId,
+    });
     return responseWithCors(500, { error: error.message });
   }
 };
