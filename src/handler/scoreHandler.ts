@@ -33,7 +33,7 @@ interface ScoreItem {
 // Constants
 const LEADERBOARD_PARTITION = "leaderboard";
 const HIGH_SCORE_THRESHOLD = 1000;
-// const SCAN_LIMIT = 10_000;
+const SCAN_LIMIT = 10_000;
 
 // Function to get user information from Cognito
 const getUserInfo = async (
@@ -213,6 +213,7 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
       ExpressionAttributeValues: {
         ":partition": LEADERBOARD_PARTITION,
       },
+      Limit: SCAN_LIMIT,
     });
 
     const data = await dynamoDbDocClient.send(scanCommand);
