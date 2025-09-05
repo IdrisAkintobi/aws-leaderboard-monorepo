@@ -2,26 +2,30 @@ version = 0.1
 [local]
 [local.deploy]
 [local.deploy.parameters]
-stack_name = "aws-mock-app-local"
-s3_bucket = "sam-cli-managed-default" # Default bucket for SAM CLI local deployments
-s3_prefix = "aws-mock-app-local"
+stack_name = "aws-leaderboard-app-local"
+s3_bucket = "sam-cli-managed-default"
+s3_prefix = "aws-leaderboard-app-local"
 region = "us-east-1"
-confirm_changeset = true # Set to false for automated local deployments
+confirm_changeset = true           # Set to false for automated local deployments
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
 resolve_s3 = true
 disable_rollback = true
-parameter_overrides = "ProjectName=\"aws-mock-app-local\" LeaderboardTableName=\"leaderboard-local\""
+parameter_overrides = "ProjectName=\"aws-leaderboard-app-local\" LeaderboardTableName=\"leaderboard-local\" AllowedOrigin=\"http://localhost:5173\""
+debug = false
+guided = false
 
 [prod]
 [prod.deploy]
 [prod.deploy.parameters]
-stack_name = "aws-mock-app-assessment"
+stack_name = "aws-leaderboard-app-prod"
 s3_bucket = "aws-sam-cli-source-bucket"
-region = "eu-north-1"
+region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-resolve_s3 = true
-s3_prefix = "aws-mock-app-assessment"
-parameter_overrides = "ProjectName=\"aws-mock-app-assessment\" TaskAccessKeyId=\"AKIA474VTUGHK62Y2HHT\" TaskSecretAccessKey=\"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\" CognitoAppClientSecret=\"dnel7s515mgqk74rurtt1rhqsb0p21kgmu1nf1jdlcfvo04lvde\""
+resolve_s3 = false
+s3_prefix = "aws-leaderboard-app-prod"
+parameter_overrides = ""
 image_repositories = []
+debug = false
+guided = true
