@@ -72,6 +72,7 @@ export const registerHandler: APIGatewayProxyHandler = async (event) => {
                 { Name: "name", Value: name },
             ],
         });
+
         await cognitoClient.send(command);
         return responseWithCors(201, {
             message: "User registered successfully. Please confirm your email.",

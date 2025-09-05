@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent } from "aws-lambda";
 
 import { Logger } from "./logger.js";
+import { MIN_SCORE, MAX_SCORE } from "./constants.js";
 
 // Validation result interface
 interface ValidationResult<T> {
@@ -9,9 +10,7 @@ interface ValidationResult<T> {
     error?: string;
 }
 
-// constants
-const MAX_SCORE = 999999;
-const MIN_SCORE = 0;
+// constants are shared via constants.ts
 
 // Environment variable validator
 export class EnvironmentValidator {

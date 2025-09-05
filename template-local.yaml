@@ -203,6 +203,8 @@ Resources:
                   AttributeType: S
                 - AttributeName: score
                   AttributeType: N
+                - AttributeName: leaderboard_rank_key
+                  AttributeType: S
             KeySchema:
                 - AttributeName: id
                   KeyType: HASH
@@ -213,6 +215,14 @@ Resources:
                       - AttributeName: leaderboard_partition
                         KeyType: HASH
                       - AttributeName: score
+                        KeyType: RANGE
+                  Projection:
+                      ProjectionType: ALL
+                - IndexName: LeaderboardIndex
+                  KeySchema:
+                      - AttributeName: leaderboard_partition
+                        KeyType: HASH
+                      - AttributeName: leaderboard_rank_key
                         KeyType: RANGE
                   Projection:
                       ProjectionType: ALL

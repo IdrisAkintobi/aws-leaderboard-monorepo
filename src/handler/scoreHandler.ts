@@ -3,7 +3,7 @@ import type { APIGatewayProxyHandler } from "aws-lambda";
 
 import { PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
 import { GetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
-import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 import { Logger } from "../utils/logger.js";
 import {
@@ -13,6 +13,7 @@ import {
     handleError,
     responseWithCors,
 } from "../utils/utils.js";
+import { MAX_SCORE, SCORE_PAD_WIDTH, TIMESTAMP_PAD_WIDTH } from "../utils/constants.js";
 import { EnvironmentValidator, validateSubmitScoreRequestBody } from "../utils/validators.js";
 
 interface UserInfo {
@@ -26,13 +27,13 @@ interface ScoreItem {
     user_name: string;
     score: number;
     timestamp: number;
-    leaderboard_partition: string;
+    leaderboard_partition?: string;
+    leaderboard_rank_key?: string; // composite for ranking: inverted score + timestamp
 }
 
 // Constants
 const LEADERBOARD_PARTITION = "leaderboard";
 const HIGH_SCORE_THRESHOLD = 1000;
-const SCAN_LIMIT = 10_000;
 
 // Function to get user information from Cognito
 const getUserInfo = async (accessToken: string, requestId: string): Promise<UserInfo> => {
@@ -58,13 +59,24 @@ const getUserInfo = async (accessToken: string, requestId: string): Promise<User
 
 const saveScore = async (userInfo: UserInfo, score: number, requestId: string): Promise<void> => {
     try {
+        // Build optional leaderboard rank key when score qualifies
+        // We want highest score first and, among ties, earliest timestamp first.
+        // Construct a composite key that sorts ASC: invertedScore + '#' + timestamp
+        const ts = Math.floor(Date.now() / 1000);
+        const boundedScore = Math.max(0, Math.min(MAX_SCORE, Math.trunc(score)));
+        const invertedScore = String(MAX_SCORE - boundedScore).padStart(SCORE_PAD_WIDTH, "0");
+        const tsPadded = String(ts).padStart(TIMESTAMP_PAD_WIDTH, "0");
+        const rankKey = `${invertedScore}#${tsPadded}`;
+
         const scoreItem: ScoreItem = {
             id: randomUUID(),
             user_id: userInfo.userId,
             user_name: userInfo.userName,
             score,
-            timestamp: Math.floor(Date.now() / 1000),
-            leaderboard_partition: LEADERBOARD_PARTITION,
+            timestamp: ts,
+            ...(score >= HIGH_SCORE_THRESHOLD
+                ? { leaderboard_partition: LEADERBOARD_PARTITION, leaderboard_rank_key: rankKey }
+                : {}),
         };
 
         const putCommand = new PutCommand({
@@ -164,25 +176,22 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
     const action = "get_leaderboard";
 
     try {
-        const scanCommand = new ScanCommand({
+        // Query the new index to fetch the highest score and, among ties, the earliest timestamp
+        const queryCommand = new QueryCommand({
             TableName: process.env.LEADERBOARD_TABLE_NAME,
-            FilterExpression: "leaderboard_partition = :partition",
+            IndexName: "LeaderboardIndex",
+            KeyConditionExpression: "leaderboard_partition = :partition",
             ExpressionAttributeValues: {
                 ":partition": LEADERBOARD_PARTITION,
             },
-            Limit: SCAN_LIMIT,
+            // rank key is inverted score + timestamp; ASC ensures highest score then earliest ts first
+            ScanIndexForward: true,
+            Limit: 1,
         });
 
-        const data = await dynamoDbDocClient.send(scanCommand);
+        const data = await dynamoDbDocClient.send(queryCommand);
 
-        if (!data.Items || data.Items.length === 0) {
-            return responseWithCors(200, { topScore: {} });
-        }
-
-        // Sort items by score in descending order and limit
-        const topScores = (data.Items as ScoreItem[]).sort((a, b) => (b.score || 0) - (a.score || 0));
-        const topScore = topScores.length > 0 ? topScores[0] : {};
-
+        const topScore = data.Items && data.Items[0] ? (data.Items[0] as ScoreItem) : {};
         return responseWithCors(200, { topScore });
     } catch (error: any) {
         Logger.error("Leaderboard request failed", error, {
