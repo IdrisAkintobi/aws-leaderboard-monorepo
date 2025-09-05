@@ -1,110 +1,106 @@
+import { createHmac } from "node:crypto";
+import type { APIGatewayProxyResult } from "aws-lambda";
+
 import { ApiGatewayManagementApiClient } from "@aws-sdk/client-apigatewaymanagementapi";
 import {
-  CognitoIdentityProviderClient,
-  DescribeUserPoolClientCommand,
+    CognitoIdentityProviderClient,
+    DescribeUserPoolClientCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import type { APIGatewayProxyResult } from "aws-lambda";
-import { createHmac } from "node:crypto";
+
 import { Logger } from "./logger.js";
 
 // Cache for the client secret
 let cachedClientSecret = process.env.COGNITO_APP_CLIENT_SECRET;
-export const externalServiceConfig = {
-  region: process.env.TASK_REGION!,
-  credentials: {
-    accessKeyId: process.env.TASK_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.TASK_SECRET_ACCESS_KEY!,
-  },
-};
 
-const dynamoDbClient = new DynamoDBClient(externalServiceConfig);
-export const cognitoClient = new CognitoIdentityProviderClient(
-  externalServiceConfig
-);
+const dynamoDbClient = new DynamoDBClient();
+export const cognitoClient = new CognitoIdentityProviderClient();
 export const dynamoDbDocClient = DynamoDBDocumentClient.from(dynamoDbClient);
 export const apiGwManagementApiClient = new ApiGatewayManagementApiClient({
-  endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
-  ...externalServiceConfig,
+    endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
 });
 
 const getCognitoAppClientSecret = async () => {
-  if (cachedClientSecret) {
-    return cachedClientSecret;
-  }
-
-  try {
-    const command = new DescribeUserPoolClientCommand({
-      UserPoolId: process.env.COGNITO_USER_POOL_ID,
-      ClientId: process.env.COGNITO_APP_CLIENT_ID,
-    });
-
-    const response = await cognitoClient.send(command);
-    if (response.UserPoolClient && response.UserPoolClient.ClientSecret) {
-      cachedClientSecret = response.UserPoolClient.ClientSecret;
-      return cachedClientSecret;
+    if (cachedClientSecret) {
+        return cachedClientSecret;
     }
-    return null; // Explicitly return null if secret is not found
-  } catch (error) {
-    console.error("Failed to get client secret:", error);
-    return null; // Return null on error as well
-  }
+
+    try {
+        const command = new DescribeUserPoolClientCommand({
+            UserPoolId: process.env.COGNITO_USER_POOL_ID,
+            ClientId: process.env.COGNITO_APP_CLIENT_ID,
+        });
+
+        const response = await cognitoClient.send(command);
+        if (response.UserPoolClient && response.UserPoolClient.ClientSecret) {
+            cachedClientSecret = response.UserPoolClient.ClientSecret;
+            return cachedClientSecret;
+        }
+        return null; // Explicitly return null if secret is not found
+    } catch (error) {
+        console.error("Failed to get client secret:", error);
+        return null; // Return null on error as well
+    }
 };
 
 export const computeSecretHash = async (username: string): Promise<string> => {
-  const clientSecret = await getCognitoAppClientSecret();
-  if (!clientSecret) {
-    throw new Error("Cognito App Client Secret not available.");
-  }
-  return createHmac("sha256", clientSecret)
-    .update(username + process.env.COGNITO_APP_CLIENT_ID!)
-    .digest("base64");
+    const clientSecret = await getCognitoAppClientSecret();
+    if (!clientSecret) {
+        throw new Error("Cognito App Client Secret not available.");
+    }
+    return createHmac("sha256", clientSecret)
+        .update(username + process.env.COGNITO_APP_CLIENT_ID!)
+        .digest("base64");
 };
 
-export function responseWithCors(
-  statusCode: number,
-  body: unknown
-): APIGatewayProxyResult {
-  return {
-    statusCode,
-    headers: {
-      "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN!,
-      "Access-Control-Allow-Credentials": "true",
-    },
-    body: JSON.stringify(body),
-  };
+export function responseWithCors(statusCode: number, body: unknown): APIGatewayProxyResult {
+    return {
+        statusCode,
+        headers: {
+            "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN!,
+            "Access-Control-Allow-Credentials": "true",
+        },
+        body: JSON.stringify(body),
+    };
 }
 
 export const handleError = (error: any, action: string, requestId?: string) => {
-  const context = { action, requestId };
+    const context = { action, requestId };
 
-  if (error.name === "InvalidToken") {
-    Logger.warn("Invalid token error", context);
-    return responseWithCors(401, { error: error.message });
-  }
+    // Handle expired token
+    if (
+        error.name === "NotAuthorizedException" ||
+        error.message?.includes("Access Token has expired") ||
+        error.message?.includes("token is expired")
+    ) {
+        Logger.warn("Invalid token error", context);
+        return responseWithCors(401, { error: error.message });
+    }
 
-  if (error.name === "AuthenticationError") {
-    Logger.warn("Authentication error", context);
-    return responseWithCors(401, { error: error.message });
-  }
+    // Handle other authentication-related errors
+    if (
+        error.name === "UserNotConfirmedException" ||
+        error.name === "UserNotFoundException" ||
+        error.name === "InvalidParameterException"
+    ) {
+        Logger.warn("Authentication error", context);
+        return responseWithCors(401, { error: error.message });
+    }
 
-  if (
-    error.name === "UserNotFoundException" ||
-    error.name === "NotAuthorizedException"
-  ) {
-    return responseWithCors(401, { error: "Invalid credentials." });
-  }
+    if (error.name === "UserNotFoundException" || error.name === "NotAuthorizedException") {
+        return responseWithCors(401, { error: "Invalid credentials." });
+    }
 
-  if (error.name === "UsernameExistsException") {
-    return responseWithCors(409, {
-      error: "User with this email already exists.",
-    });
-  }
+    if (error.name === "UsernameExistsException") {
+        return responseWithCors(409, {
+            error: "User with this email already exists.",
+        });
+    }
 
-  if (error.name === "CodeMismatchException") {
-    return responseWithCors(400, { error: "Invalid verification code." });
-  }
-  Logger.error("Unhandled error", error, context);
-  return responseWithCors(500, { error: error.message });
+    if (error.name === "CodeMismatchException") {
+        return responseWithCors(400, { error: "Invalid verification code." });
+    }
+    Logger.error("Unhandled error", error, context);
+    return responseWithCors(500, { error: error.message });
 };
