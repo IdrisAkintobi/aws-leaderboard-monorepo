@@ -1,6 +1,3 @@
-import { createHmac } from "node:crypto";
-import type { APIGatewayProxyResult } from "aws-lambda";
-
 import { ApiGatewayManagementApiClient } from "@aws-sdk/client-apigatewaymanagementapi";
 import {
     CognitoIdentityProviderClient,
@@ -8,8 +5,11 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { createHmac } from "node:crypto";
 
 import { Logger } from "./logger.js";
+
+import type { APIGatewayProxyResult } from "aws-lambda";
 
 // Cache for the client secret
 let cachedClientSecret = process.env.COGNITO_APP_CLIENT_SECRET;

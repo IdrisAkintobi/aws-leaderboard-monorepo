@@ -1,7 +1,7 @@
-import type { APIGatewayProxyEvent } from "aws-lambda";
-
-import { Logger } from "./logger.js";
 import { MIN_SCORE, MAX_SCORE } from "./constants.js";
+import { Logger } from "./logger.js";
+
+import type { APIGatewayProxyEvent } from "aws-lambda";
 
 // Validation result interface
 interface ValidationResult<T> {
@@ -49,8 +49,17 @@ export class EnvironmentValidator {
 // Request validators
 const parseBody = (event: APIGatewayProxyEvent) => {
     try {
-        return JSON.parse(event.body || "{}");
-    } catch {
+        if (!event.body) return {};
+        // Some local tools or proxies may pass an already-parsed object
+        if (typeof (event as any).body === "object") {
+            return (event as any).body ?? {};
+        }
+        const str = String(event.body);
+        const raw = event.isBase64Encoded ? Buffer.from(str, "base64").toString("utf-8") : str.trim();
+        if (!raw) return {};
+        return JSON.parse(raw);
+    } catch (e: any) {
+        Logger.warn("Failed to parse request body as JSON", { action: "parse_body", error: e?.message });
         return {};
     }
 };
@@ -97,16 +106,9 @@ export const validateVerifyRequestBody = (event: APIGatewayProxyEvent): Validati
     return { isValid: true, data: { email, code } };
 };
 
-export const validateSubmitScoreRequestBody = (
-    event: APIGatewayProxyEvent,
-): ValidationResult<{ score: number; token: string }> => {
+export const validateSubmitScoreRequestBody = (event: APIGatewayProxyEvent): ValidationResult<{ score: number }> => {
     const body = parseBody(event);
-    const token = getAuthToken(event);
     const { score } = body;
-
-    if (!token) {
-        return { isValid: false, error: "Authorization token is required" };
-    }
 
     if (score === undefined || score === null) {
         return { isValid: false, error: "Score field is required" };
@@ -123,25 +125,7 @@ export const validateSubmitScoreRequestBody = (
         };
     }
 
-    return { isValid: true, data: { score, token } };
+    return { isValid: true, data: { score } };
 };
 
-function getAuthToken(event: APIGatewayProxyEvent): string | null {
-    try {
-        // Validate authorization header
-        const authHeader = event.headers.Authorization || event.headers.authorization;
-        if (!authHeader) return null;
-
-        if (!authHeader.startsWith("Bearer ")) return null;
-
-        const token = authHeader.split(" ")[1];
-        if (!token || token.length < 10) return null;
-
-        return token;
-    } catch (error) {
-        Logger.error("Request validation failed", error, {
-            action: "request_validation",
-        });
-        return null;
-    }
-}
+// Auth token extraction is no longer needed; protected routes use a Lambda Authorizer.

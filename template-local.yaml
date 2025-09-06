@@ -45,12 +45,13 @@ Globals:
                 IS_LOCALSTACK: "true"
                 AWS_ACCESS_KEY_ID: test
                 AWS_SECRET_ACCESS_KEY: test
-                AWS_DEFAULT_REGION: us-east-1
+                AWS_DEFAULT_REGION: ${AWS::Region}
                 COGNITO_USER_POOL_ID: !Ref CognitoUserPool
                 COGNITO_APP_CLIENT_ID: !Ref CognitoUserPoolClient
                 ALLOWED_ORIGIN: !Ref AllowedOrigin
                 LEADERBOARD_TABLE_NAME: !Ref LeaderboardTable
-                WEBSOCKET_API_ENDPOINT: !Sub "https://://${WebSocketApi}.execute-api.localhost.localstack.cloud:4566/production"
+                WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.localhost.localstack.cloud:4566/production"
+                CONNECTIONS_TABLE_NAME: !Ref ConnectionsTable
         Tracing: Active
 
 # =======================================================================
@@ -58,19 +59,149 @@ Globals:
 # =======================================================================
 Resources:
     # -------------------------------------------------------------------
+    # Lambda Functions for API routes (Authorizer functions removed)
+    # -------------------------------------------------------------------
+
+    # REST API using API Gateway V2 (HTTP API)
+    RestApi:
+        Type: AWS::ApiGatewayV2::Api
+        Properties:
+            Name: !Sub "${ProjectName}-rest-api"
+            ProtocolType: HTTP
+            CorsConfiguration:
+                AllowOrigins:
+                    - !Ref AllowedOrigin
+                AllowHeaders:
+                    - "Content-Type"
+                    - "X-Amz-Date"
+                    - "Authorization"
+                    - "X-Api-Key"
+                    - "X-Amz-Security-Token"
+                    - "X-WS-Connection-Id"
+                AllowMethods:
+                    - "POST"
+                    - "GET"
+                    - "OPTIONS"
+                    - "PUT"
+                    - "DELETE"
+                AllowCredentials: true
+                MaxAge: 3600
+
+    RestApiStage:
+        Type: AWS::ApiGatewayV2::Stage
+        Properties:
+            StageName: Prod
+            ApiId: !Ref RestApi
+            AutoDeploy: true
+
+    # REST API Cognito JWT Authorizer
+    RestApiAuthorizer:
+        Type: AWS::ApiGatewayV2::Authorizer
+        Properties:
+            Name: RestApiCognitoAuthorizer
+            ApiId: !Ref RestApi
+            AuthorizerType: JWT
+            JwtConfiguration:
+                Audience:
+                    - !Ref CognitoUserPoolClient
+                Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+            IdentitySource:
+                - "$request.header.Authorization"
+
+    # Public Routes (No Authorization)
+    LoginRoute:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref RestApi
+            RouteKey: "POST /auth/login"
+            Target: !Sub "integrations/${LoginIntegration}"
+
+    RegisterRoute:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref RestApi
+            RouteKey: "POST /auth/register"
+            Target: !Sub "integrations/${RegisterIntegration}"
+
+    VerifyRoute:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref RestApi
+            RouteKey: "POST /auth/verify"
+            Target: !Sub "integrations/${VerifyIntegration}"
+
+    LeaderboardRoute:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref RestApi
+            RouteKey: "GET /scores/leaderboard"
+            Target: !Sub "integrations/${LeaderboardIntegration}"
+
+    # Protected Route (Requires Authorization)
+    SubmitScoreRoute:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            ApiId: !Ref RestApi
+            RouteKey: "POST /scores/submit"
+            AuthorizationType: JWT
+            AuthorizerId: !Ref RestApiAuthorizer
+            Target: !Sub "integrations/${SubmitScoreIntegration}"
+
+    # Integrations
+    LoginIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref RestApi
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LoginFunction.Arn}/invocations"
+            PayloadFormatVersion: "2.0"
+
+    RegisterIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref RestApi
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RegisterFunction.Arn}/invocations"
+            PayloadFormatVersion: "2.0"
+
+    VerifyIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref RestApi
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${VerifyFunction.Arn}/invocations"
+            PayloadFormatVersion: "2.0"
+
+    LeaderboardIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref RestApi
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetLeaderboardFunction.Arn}/invocations"
+            PayloadFormatVersion: "2.0"
+
+    SubmitScoreIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            ApiId: !Ref RestApi
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SubmitScoreFunction.Arn}/invocations"
+            PayloadFormatVersion: "2.0"
+
+    # -------------------------------------------------------------------
     # Lambda Functions for each API route
     # -------------------------------------------------------------------
     LoginFunction:
         Type: AWS::Serverless::Function
         Properties:
-            CodeUri: ./
-            Handler: dist/handler/authHandler.loginHandler
+            CodeUri: ./dist
+            Handler: handler/auth/login.loginHandler
             Policies:
                 - Statement:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:us-east-1:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -78,24 +209,18 @@ Resources:
                           - "logs:CreateLogStream"
                           - "logs:PutLogEvents"
                       Resource: "*"
-            Events:
-                LoginApi:
-                    Type: Api
-                    Properties:
-                        Path: /auth/login
-                        Method: POST
 
     RegisterFunction:
         Type: AWS::Serverless::Function
         Properties:
-            CodeUri: ./
-            Handler: dist/handler/authHandler.registerHandler
+            CodeUri: ./dist
+            Handler: handler/auth/register.registerHandler
             Policies:
                 - Statement:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:us-east-1:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -103,24 +228,18 @@ Resources:
                           - "logs:CreateLogStream"
                           - "logs:PutLogEvents"
                       Resource: "*"
-            Events:
-                RegisterApi:
-                    Type: Api
-                    Properties:
-                        Path: /auth/register
-                        Method: POST
 
     VerifyFunction:
         Type: AWS::Serverless::Function
         Properties:
-            CodeUri: ./
-            Handler: dist/handler/authHandler.verifyHandler
+            CodeUri: ./dist
+            Handler: handler/auth/verify.verifyHandler
             Policies:
                 - Statement:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:us-east-1:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -128,31 +247,27 @@ Resources:
                           - "logs:CreateLogStream"
                           - "logs:PutLogEvents"
                       Resource: "*"
-            Events:
-                VerifyApi:
-                    Type: Api
-                    Properties:
-                        Path: /auth/verify
-                        Method: POST
 
     SubmitScoreFunction:
         Type: AWS::Serverless::Function
         Properties:
-            CodeUri: ./
-            Handler: dist/handler/scoreHandler.submitScoreHandler
+            CodeUri: ./dist
+            Handler: handler/scores/submit.submitScoreHandler
             Policies:
                 - DynamoDBCrudPolicy:
                       TableName: !Ref LeaderboardTable
+                - DynamoDBCrudPolicy:
+                      TableName: !Ref ConnectionsTable
                 - Statement:
                       Effect: Allow
                       Action:
                           - "execute-api:ManageConnections"
-                      Resource: !Sub "arn:aws:execute-api:us-east-1:000000000000:${WebSocketApi}/*"
+                      Resource: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${WebSocketApi}/*"
                 - Statement:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:us-east-1:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -160,18 +275,12 @@ Resources:
                           - "logs:CreateLogStream"
                           - "logs:PutLogEvents"
                       Resource: "*"
-            Events:
-                SubmitScoreApi:
-                    Type: Api
-                    Properties:
-                        Path: /scores/submit
-                        Method: POST
 
     GetLeaderboardFunction:
         Type: AWS::Serverless::Function
         Properties:
-            CodeUri: ./
-            Handler: dist/handler/scoreHandler.getLeaderboardHandler
+            CodeUri: ./dist
+            Handler: handler/scores/leaderboard.getLeaderboardHandler
             Policies:
                 - DynamoDBCrudPolicy:
                       TableName: !Ref LeaderboardTable
@@ -182,20 +291,100 @@ Resources:
                           - "logs:CreateLogStream"
                           - "logs:PutLogEvents"
                       Resource: "*"
-            Events:
-                GetLeaderboardApi:
-                    Type: Api
-                    Properties:
-                        Path: /scores/leaderboard
-                        Method: GET
+
+
+    # Lambda permissions for API Gateway V2 to invoke functions
+    LoginFunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !GetAtt LoginFunction.Arn
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+
+    RegisterFunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !GetAtt RegisterFunction.Arn
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+
+    VerifyFunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !GetAtt VerifyFunction.Arn
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+
+    SubmitScoreFunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !GetAtt SubmitScoreFunction.Arn
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+
+    GetLeaderboardFunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !GetAtt GetLeaderboardFunction.Arn
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+
+
+    WebSocketConnectFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: ./dist
+            Handler: handler/ws/connect.connectHandler
+            Policies:
+                - DynamoDBCrudPolicy:
+                      TableName: !Ref ConnectionsTable
+
+    WebSocketDisconnectFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: ./dist
+            Handler: handler/ws/disconnect.disconnectHandler
+            Policies:
+                - DynamoDBCrudPolicy:
+                      TableName: !Ref ConnectionsTable
 
     # -------------------------------------------------------------------
-    # DynamoDB Table
+    # DynamoDB Tables
     # -------------------------------------------------------------------
+    ConnectionsTable:
+        Type: AWS::DynamoDB::Table
+        Properties:
+            TableName: !Sub "${ProjectName}-connections"
+            AttributeDefinitions:
+                - AttributeName: user_id
+                  AttributeType: S
+                - AttributeName: connectionId
+                  AttributeType: S
+            KeySchema:
+                - AttributeName: user_id
+                  KeyType: HASH
+                - AttributeName: connectionId
+                  KeyType: RANGE
+            BillingMode: PAY_PER_REQUEST
+            GlobalSecondaryIndexes:
+                - IndexName: ConnectionIdIndex
+                  KeySchema:
+                      - AttributeName: connectionId
+                        KeyType: HASH
+                      - AttributeName: user_id
+                        KeyType: RANGE
+                  Projection:
+                      ProjectionType: ALL
+
     LeaderboardTable:
         Type: AWS::DynamoDB::Table
         Properties:
-            TableName: !Ref LeaderboardTableName
+            TableName: !Sub "${ProjectName}-${LeaderboardTableName}"
             AttributeDefinitions:
                 - AttributeName: id
                   AttributeType: S
@@ -282,78 +471,115 @@ Resources:
             ApiId: !Ref WebSocketApi
             AutoDeploy: true
 
-    WebSocketRoute:
+    WebSocketRouteConnect:
         Type: AWS::ApiGatewayV2::Route
         Properties:
-            RouteKey: "$default"
+            RouteKey: "$connect"
+            AuthorizationType: JWT
+            AuthorizerId: !Ref WebSocketCognitoAuthorizer
+            ApiId: !Ref WebSocketApi
+            Target: !Sub "integrations/${WebSocketConnectIntegration}"
+
+    WebSocketRouteDisconnect:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            RouteKey: "$disconnect"
             AuthorizationType: NONE
             ApiId: !Ref WebSocketApi
-            Target: !Sub "integrations/${WebSocketIntegration}"
+            Target: !Sub "integrations/${WebSocketDisconnectIntegration}"
 
-    WebSocketIntegration:
+    WebSocketConnectIntegration:
         Type: AWS::ApiGatewayV2::Integration
         Properties:
             IntegrationType: AWS_PROXY
-            IntegrationUri: !Sub "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/${LoginFunction.Arn}/invocations"
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketConnectFunction.Arn}/invocations"
             ApiId: !Ref WebSocketApi
 
-    WebSocketLambdaPermission:
+    WebSocketDisconnectIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDisconnectFunction.Arn}/invocations"
+            ApiId: !Ref WebSocketApi
+
+    WebSocketConnectLambdaPermission:
         Type: AWS::Lambda::Permission
         Properties:
             Action: "lambda:InvokeFunction"
-            FunctionName: !GetAtt LoginFunction.Arn
+            FunctionName: !GetAtt WebSocketConnectFunction.Arn
             Principal: "apigateway.amazonaws.com"
-            SourceArn: !Sub "arn:aws:execute-api:us-east-1:000000000000:${WebSocketApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${WebSocketApi}/*"
+
+    WebSocketDisconnectLambdaPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt WebSocketDisconnectFunction.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${WebSocketApi}/*"
+
+    # WebSocket Cognito JWT Authorizer
+    WebSocketCognitoAuthorizer:
+        Type: AWS::ApiGatewayV2::Authorizer
+        Properties:
+            Name: WebSocketCognitoAuthorizer
+            ApiId: !Ref WebSocketApi
+            AuthorizerType: JWT
+            JwtConfiguration:
+                Audience:
+                    - !Ref CognitoUserPoolClient
+                Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+            IdentitySource:
+                - "route.request.querystring.token"
+
 
 # =======================================================================
-# === Outputs: Current LocalStack URLs (Non-deprecated) ===
+# === Outputs: Current LocalStack URLs ===
 # =======================================================================
 Outputs:
-    # Base API URL for LocalStack - CURRENT FORMAT
     ApiBaseUrl:
         Description: "Base URL for all REST API endpoints"
-        Value: !Sub "https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod"
 
-    # Individual API Endpoints - CURRENT FORMAT
     RegisterEndpoint:
         Description: "POST endpoint for user registration"
-        Value: !Sub "https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/register"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/register"
 
     LoginEndpoint:
         Description: "POST endpoint for user login"
-        Value: !Sub "https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/login"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/login"
+
+    VerifyEndpoint:
+        Description: "POST endpoint for user verification"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/verify"
 
     SubmitScoreEndpoint:
         Description: "POST endpoint for submitting scores"
-        Value: !Sub "https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/submit"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/submit"
 
     LeaderboardEndpoint:
         Description: "GET endpoint for retrieving leaderboard"
-        Value: !Sub "https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/leaderboard"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/leaderboard"
 
-    # Alternative HTTP format (if HTTPS doesn't work in your setup)
     ApiBaseUrlHttp:
         Description: "Base URL for all REST API endpoints (HTTP)"
-        Value: !Sub "http://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod"
+        Value: !Sub "http://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod"
 
-    # WebSocket API - CURRENT FORMAT
     WebSocketUrl:
         Description: "WebSocket API URL for real-time communication"
         Value: !Sub "wss://${WebSocketApi}.execute-api.localhost.localstack.cloud:4566/production"
 
-    # Resource IDs for reference
     RestApiId:
         Description: "REST API Gateway ID"
-        Value: !Ref ServerlessRestApi
+        Value: !Ref RestApi
 
     WebSocketApiId:
         Description: "WebSocket API Gateway ID"
         Value: !Ref WebSocketApi
 
-    # AWS Resource Information
     LeaderboardTableName:
         Description: "DynamoDB Table Name"
-        Value: !Ref LeaderboardTable
+        Value: !Sub "${ProjectName}-${LeaderboardTableName}"
 
     CognitoUserPoolId:
         Description: "Cognito User Pool ID"
@@ -363,7 +589,6 @@ Outputs:
         Description: "Cognito App Client ID"
         Value: !Ref CognitoUserPoolClient
 
-    # Lambda Function Names
     LoginFunctionName:
         Description: "Login Lambda Function Name"
         Value: !Ref LoginFunction
@@ -379,19 +604,3 @@ Outputs:
     GetLeaderboardFunctionName:
         Description: "Get Leaderboard Lambda Function Name"
         Value: !Ref GetLeaderboardFunction
-
-    # Complete endpoint summary with current URLs
-    EndpointSummary:
-        Description: "All available API endpoints with current LocalStack URLs"
-        Value: !Sub |
-            REST API Base (HTTPS): https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod
-            REST API Base (HTTP):  http://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod
-
-            Available Endpoints:
-            POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/register
-            POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/login
-            POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/auth/verify
-            POST https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/submit
-            GET  https://${ServerlessRestApi}.execute-api.localhost.localstack.cloud:4566/Prod/scores/leaderboard
-
-            WebSocket: wss://${WebSocketApi}.execute-api.localhost.localstack.cloud:4566/production
