@@ -25,8 +25,8 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
         });
 
         const data = await dynamoDbDocClient.send(queryCommand);
-        const topScore = data.Items && data.Items[0] ? data.Items[0] : {};
-        return responseWithCors(200, { topScore });
+        const {user_id, user_name, score} = data.Items && data.Items[0] ? data.Items[0] : {};
+        return responseWithCors(200, { user_id, user_name, score });
     } catch (error: any) {
         return responseWithCors(500, { error: error.message, action, requestId });
     }

@@ -22,13 +22,11 @@ export const submitScoreHandler: APIGatewayProxyHandler = async (event) => {
 
         const { score } = validation.data!;
 
-        // Authorized user from authorizer context
-        const authz = (event.requestContext.authorizer || {}) as AuthorizerContext;
-        const userId: string | undefined = authz.user_id || authz.principalId;
-        const userName: string = authz.username || authz.preferred_username || authz.user_name || "";
-        if (!userId) {
-            return responseWithCors(401, { error: "Unauthorized" });
-        }
+        // Extract user info from JWT claims (from id token)
+        const jwtClaims = event.requestContext.authorizer?.jwt?.claims;
+        const userId = jwtClaims.sub || jwtClaims['cognito:username'];
+        const userName = jwtClaims.preferred_username || jwtClaims.name;
+        
         const userInfo: UserInfo = { userId, userName };
 
         await saveScore(userInfo, score, requestId);

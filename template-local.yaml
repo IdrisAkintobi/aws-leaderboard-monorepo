@@ -137,7 +137,7 @@ Resources:
             RouteKey: "GET /scores/leaderboard"
             Target: !Sub "integrations/${LeaderboardIntegration}"
 
-    # Protected Route (Requires Authorization)
+    # Protected Route
     SubmitScoreRoute:
         Type: AWS::ApiGatewayV2::Route
         Properties:
