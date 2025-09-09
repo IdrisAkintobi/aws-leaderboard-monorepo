@@ -1,7 +1,7 @@
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 import { LEADERBOARD_PARTITION } from "../../services/scoreService.js";
-import { responseWithCors, dynamoDbDocClient } from "../../utils/utils.js";
+import { httpResponse, dynamoDbDocClient } from "../../utils/utils.js";
 import { EnvironmentValidator } from "../../utils/validators.js";
 
 import type { APIGatewayProxyHandler } from "aws-lambda";
@@ -26,8 +26,8 @@ export const getLeaderboardHandler: APIGatewayProxyHandler = async (event) => {
 
         const data = await dynamoDbDocClient.send(queryCommand);
         const {user_id, user_name, score} = data.Items && data.Items[0] ? data.Items[0] : {};
-        return responseWithCors(200, { user_id, user_name, score });
+        return httpResponse(200, { user_id, user_name, score });
     } catch (error: any) {
-        return responseWithCors(500, { error: error.message, action, requestId });
+        return httpResponse(500, { error: error.message, action, requestId });
     }
 };

@@ -17,7 +17,7 @@ let cachedClientSecret = process.env.COGNITO_APP_CLIENT_SECRET;
 const dynamoDbClient = new DynamoDBClient();
 export const cognitoClient = new CognitoIdentityProviderClient();
 export const dynamoDbDocClient = DynamoDBDocumentClient.from(dynamoDbClient);
-export const apiGwManagementApiClient = new ApiGatewayManagementApiClient({
+export const apiGatewayWebSocketClient = new ApiGatewayManagementApiClient({
     endpoint: process.env.WEBSOCKET_API_ENDPOINT!,
 });
 
@@ -54,14 +54,11 @@ export const computeSecretHash = async (username: string): Promise<string> => {
         .digest("base64");
 };
 
-export function responseWithCors(statusCode: number, body: unknown): APIGatewayProxyResult {
+export function httpResponse(statusCode: number, body: Record<string, unknown> | null, headers?: Record<string, string>): APIGatewayProxyResult {
     return {
         statusCode,
-        headers: {
-            "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN!,
-            "Access-Control-Allow-Credentials": "true",
-        },
-        body: JSON.stringify(body),
+        body: body ? JSON.stringify(body) : '',
+        ...(headers && { headers }),
     };
 }
 
@@ -75,7 +72,7 @@ export const handleError = (error: any, action: string, requestId?: string) => {
         error.message?.includes("token is expired")
     ) {
         Logger.warn("Invalid token error", context);
-        return responseWithCors(401, { error: error.message });
+        return httpResponse(401, { error: error.message });
     }
 
     // Handle other authentication-related errors
@@ -85,22 +82,22 @@ export const handleError = (error: any, action: string, requestId?: string) => {
         error.name === "InvalidParameterException"
     ) {
         Logger.warn("Authentication error", context);
-        return responseWithCors(401, { error: error.message });
+        return httpResponse(401, { error: error.message });
     }
 
     if (error.name === "UserNotFoundException" || error.name === "NotAuthorizedException") {
-        return responseWithCors(401, { error: "Invalid credentials." });
+        return httpResponse(401, { error: "Invalid credentials." });
     }
 
     if (error.name === "UsernameExistsException") {
-        return responseWithCors(409, {
+        return httpResponse(409, {
             error: "User with this email already exists.",
         });
     }
 
     if (error.name === "CodeMismatchException") {
-        return responseWithCors(400, { error: "Invalid verification code." });
+        return httpResponse(400, { error: "Invalid verification code." });
     }
     Logger.error("Unhandled error", error, context);
-    return responseWithCors(500, { error: error.message });
+    return httpResponse(500, { error: error.message });
 };

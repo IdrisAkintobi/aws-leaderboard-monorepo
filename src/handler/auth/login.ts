@@ -1,6 +1,6 @@
 import { InitiateAuthCommand } from "@aws-sdk/client-cognito-identity-provider";
 
-import { cognitoClient, computeSecretHash, handleError, responseWithCors } from "../../utils/utils.js";
+import { cognitoClient, computeSecretHash, handleError, httpResponse } from "../../utils/utils.js";
 import { EnvironmentValidator, validateLoginRequestBody } from "../../utils/validators.js";
 
 import type { APIGatewayProxyHandler } from "aws-lambda";
@@ -13,7 +13,7 @@ export const loginHandler: APIGatewayProxyHandler = async (event) => {
 
     const validation = validateLoginRequestBody(event);
     if (!validation.isValid) {
-        return responseWithCors(400, { error: validation.error });
+        return httpResponse(400, { error: validation.error });
     }
 
     const { email, password } = validation.data!;
@@ -30,7 +30,7 @@ export const loginHandler: APIGatewayProxyHandler = async (event) => {
             },
         });
         const response = await cognitoClient.send(command);
-        return responseWithCors(200, response.AuthenticationResult);
+        return httpResponse(200, response.AuthenticationResult as Record<string, unknown>);
     } catch (error: any) {
         return handleError(error, action, requestId);
     }

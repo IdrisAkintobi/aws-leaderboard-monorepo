@@ -1,6 +1,6 @@
 import { ConfirmSignUpCommand } from "@aws-sdk/client-cognito-identity-provider";
 
-import { cognitoClient, computeSecretHash, handleError, responseWithCors } from "../../utils/utils.js";
+import { cognitoClient, computeSecretHash, handleError, httpResponse } from "../../utils/utils.js";
 import { EnvironmentValidator, validateVerifyRequestBody } from "../../utils/validators.js";
 
 import type { APIGatewayProxyHandler } from "aws-lambda";
@@ -13,7 +13,7 @@ export const verifyHandler: APIGatewayProxyHandler = async (event) => {
 
     const validation = validateVerifyRequestBody(event);
     if (!validation.isValid) {
-        return responseWithCors(400, { error: validation.error });
+        return httpResponse(400, { error: validation.error });
     }
 
     const { email, code } = validation.data!;
@@ -27,7 +27,7 @@ export const verifyHandler: APIGatewayProxyHandler = async (event) => {
             SecretHash: secretHash,
         });
         await cognitoClient.send(command);
-        return responseWithCors(200, { message: "Email confirmed successfully." });
+        return httpResponse(200, { message: "Email confirmed successfully." });
     } catch (error: any) {
         return handleError(error, action, requestId);
     }
