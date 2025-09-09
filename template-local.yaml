@@ -20,21 +20,18 @@ Parameters:
 
     AllowedOrigin:
         Type: String
-        Default: "http://localhost:5173"
+        Default: "https://localhost:5173"
         Description: Cors allowed origin.
 
+    StageName:
+        Type: String
+        Default: "Dev"
+        Description: Stage name for API Gateway.
+
 # =======================================================================
-# === Globals for LocalStack ===
+# === Globals ===
 # =======================================================================
 Globals:
-    Api:
-        Cors:
-            AllowOrigin: !Ref AllowedOrigin
-            AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-WS-Connection-Id'"
-            AllowMethods: "'POST,GET,OPTIONS,PUT,DELETE'"
-            AllowCredentials: true
-            MaxAge: "'3600'"
-
     Function:
         Runtime: nodejs20.x
         Timeout: 10
@@ -42,7 +39,6 @@ Globals:
         Environment:
             Variables:
                 AWS_ENDPOINT_URL: "http://localstack:4566"
-                IS_LOCALSTACK: "true"
                 AWS_ACCESS_KEY_ID: test
                 AWS_SECRET_ACCESS_KEY: test
                 AWS_DEFAULT_REGION: ${AWS::Region}
@@ -50,14 +46,54 @@ Globals:
                 COGNITO_APP_CLIENT_ID: !Ref CognitoUserPoolClient
                 ALLOWED_ORIGIN: !Ref AllowedOrigin
                 LEADERBOARD_TABLE_NAME: !Ref LeaderboardTable
-                WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.localhost.localstack.cloud:4566/production"
-                CONNECTIONS_TABLE_NAME: !Ref ConnectionsTable
+                WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.localhost.localstack.cloud:4510/${StageName}"
+                WS_CONNECTIONS_TABLE_NAME: !Ref ConnectionsTable
         Tracing: Active
 
 # =======================================================================
 # === Resources ===
 # =======================================================================
 Resources:
+    # -------------------------------------------------------------------
+    # CloudWatch Logging Resources
+    # -------------------------------------------------------------------
+    
+    # IAM Role for API Gateway to write to CloudWatch Logs
+    ApiGatewayCloudWatchRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: !Sub "${ProjectName}-apigateway-cloudwatch-role"
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service:
+                              - apigateway.amazonaws.com
+                      Action:
+                          - sts:AssumeRole
+            ManagedPolicyArns:
+                - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+
+    # API Gateway Account configuration for CloudWatch logging
+    ApiGatewayAccount:
+        Type: AWS::ApiGateway::Account
+        Properties:
+            CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchRole.Arn
+
+    # CloudWatch Log Groups
+    RestApiLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            LogGroupName: !Sub "/aws/apigateway/${ProjectName}-rest-api"
+            RetentionInDays: 14
+
+    WebSocketApiLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            LogGroupName: !Sub "/aws/apigateway/${ProjectName}-websocket-api"
+            RetentionInDays: 14
+
     # -------------------------------------------------------------------
     # Lambda Functions for API routes (Authorizer functions removed)
     # -------------------------------------------------------------------
@@ -90,9 +126,34 @@ Resources:
     RestApiStage:
         Type: AWS::ApiGatewayV2::Stage
         Properties:
-            StageName: Prod
+            StageName: !Ref StageName
             ApiId: !Ref RestApi
             AutoDeploy: true
+            # Enable CloudWatch logging
+            AccessLogSettings:
+                DestinationArn: !GetAtt RestApiLogGroup.Arn
+                Format: >
+                    {
+                        "requestId": "$context.requestId",
+                        "ip": "$context.identity.sourceIp",
+                        "requestTime": "$context.requestTime",
+                        "httpMethod": "$context.httpMethod",
+                        "routeKey": "$context.routeKey",
+                        "status": "$context.status",
+                        "protocol": "$context.protocol",
+                        "responseLength": "$context.responseLength",
+                        "responseLatency": "$context.responseLatency",
+                        "integrationLatency": "$context.integrationLatency",
+                        "integrationStatus": "$context.integrationStatus",
+                        "error.message": "$context.error.message",
+                        "error.messageString": "$context.error.messageString",
+                        "integration.error": "$context.integration.error",
+                        "userAgent": "$context.identity.userAgent"
+                    }
+            DefaultRouteSettings:
+                LoggingLevel: INFO
+                DataTraceEnabled: true
+                MetricsEnabled: true
 
     # REST API Cognito JWT Authorizer
     RestApiAuthorizer:
@@ -130,14 +191,16 @@ Resources:
             RouteKey: "POST /auth/verify"
             Target: !Sub "integrations/${VerifyIntegration}"
 
+    # Protected Route
     LeaderboardRoute:
         Type: AWS::ApiGatewayV2::Route
         Properties:
             ApiId: !Ref RestApi
             RouteKey: "GET /scores/leaderboard"
+            AuthorizationType: JWT
+            AuthorizerId: !Ref RestApiAuthorizer
             Target: !Sub "integrations/${LeaderboardIntegration}"
 
-    # Protected Route
     SubmitScoreRoute:
         Type: AWS::ApiGatewayV2::Route
         Properties:
@@ -201,7 +264,7 @@ Resources:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -220,7 +283,7 @@ Resources:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -239,7 +302,7 @@ Resources:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -262,12 +325,12 @@ Resources:
                       Effect: Allow
                       Action:
                           - "execute-api:ManageConnections"
-                      Resource: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${WebSocketApi}/*"
+                      Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
                 - Statement:
                       Effect: Allow
                       Action:
                           - "cognito-idp:*"
-                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:000000000000:userpool/*"
+                      Resource: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*"
                 - Statement:
                       Effect: Allow
                       Action:
@@ -300,7 +363,7 @@ Resources:
             Action: lambda:InvokeFunction
             FunctionName: !GetAtt LoginFunction.Arn
             Principal: apigateway.amazonaws.com
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
 
     RegisterFunctionPermission:
         Type: AWS::Lambda::Permission
@@ -308,7 +371,7 @@ Resources:
             Action: lambda:InvokeFunction
             FunctionName: !GetAtt RegisterFunction.Arn
             Principal: apigateway.amazonaws.com
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
 
     VerifyFunctionPermission:
         Type: AWS::Lambda::Permission
@@ -316,7 +379,7 @@ Resources:
             Action: lambda:InvokeFunction
             FunctionName: !GetAtt VerifyFunction.Arn
             Principal: apigateway.amazonaws.com
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
 
     SubmitScoreFunctionPermission:
         Type: AWS::Lambda::Permission
@@ -324,7 +387,7 @@ Resources:
             Action: lambda:InvokeFunction
             FunctionName: !GetAtt SubmitScoreFunction.Arn
             Principal: apigateway.amazonaws.com
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
 
     GetLeaderboardFunctionPermission:
         Type: AWS::Lambda::Permission
@@ -332,7 +395,7 @@ Resources:
             Action: lambda:InvokeFunction
             FunctionName: !GetAtt GetLeaderboardFunction.Arn
             Principal: apigateway.amazonaws.com
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${RestApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*"
 
 
     WebSocketConnectFunction:
@@ -353,6 +416,15 @@ Resources:
                 - DynamoDBCrudPolicy:
                       TableName: !Ref ConnectionsTable
 
+    WebSocketDefaultFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: ./dist
+            Handler: handler/ws/default.defaultHandler
+            Policies:
+                - DynamoDBCrudPolicy:
+                      TableName: !Ref ConnectionsTable
+
     # -------------------------------------------------------------------
     # DynamoDB Tables
     # -------------------------------------------------------------------
@@ -361,23 +433,19 @@ Resources:
         Properties:
             TableName: !Sub "${ProjectName}-connections"
             AttributeDefinitions:
-                - AttributeName: user_id
+                - AttributeName: userId
                   AttributeType: S
                 - AttributeName: connectionId
                   AttributeType: S
             KeySchema:
-                - AttributeName: user_id
-                  KeyType: HASH
                 - AttributeName: connectionId
-                  KeyType: RANGE
+                  KeyType: HASH
             BillingMode: PAY_PER_REQUEST
             GlobalSecondaryIndexes:
-                - IndexName: ConnectionIdIndex
+                - IndexName: UserIdIndex
                   KeySchema:
-                      - AttributeName: connectionId
+                      - AttributeName: userId
                         KeyType: HASH
-                      - AttributeName: user_id
-                        KeyType: RANGE
                   Projection:
                       ProjectionType: ALL
 
@@ -457,6 +525,7 @@ Resources:
     # -------------------------------------------------------------------
     # WebSocket API
     # -------------------------------------------------------------------
+    # Manual workaround for LocalStack WebSocket bug
     WebSocketApi:
         Type: AWS::ApiGatewayV2::Api
         Properties:
@@ -467,27 +536,65 @@ Resources:
     WebSocketStage:
         Type: AWS::ApiGatewayV2::Stage
         Properties:
-            StageName: production
+            StageName: !Ref StageName
             ApiId: !Ref WebSocketApi
             AutoDeploy: true
+            # Enable CloudWatch logging for WebSocket API
+            AccessLogSettings:
+                DestinationArn: !GetAtt WebSocketApiLogGroup.Arn
+                Format: >
+                    {
+                        "requestId": "$context.requestId",
+                        "eventType": "$context.eventType",
+                        "routeKey": "$context.routeKey",
+                        "status": "$context.status",
+                        "connectionId": "$context.connectionId",
+                        "requestTime": "$context.requestTime",
+                        "responseLatency": "$context.responseLatency",
+                        "integrationLatency": "$context.integrationLatency",
+                        "integrationStatus": "$context.integrationStatus",
+                        "error.message": "$context.error.message",
+                        "error.messageString": "$context.error.messageString",
+                        "integration.error": "$context.integration.error"
+                    }
+            DefaultRouteSettings:
+                LoggingLevel: INFO
+                DataTraceEnabled: true
+                MetricsEnabled: true
 
+    # Connect route - To handle connection events
     WebSocketRouteConnect:
         Type: AWS::ApiGatewayV2::Route
         Properties:
             RouteKey: "$connect"
-            AuthorizationType: JWT
-            AuthorizerId: !Ref WebSocketCognitoAuthorizer
+            AuthorizationType: NONE
+            # AuthorizationType: JWT                            # Will be used when deployed to AWS and update the connect handler
+            # AuthorizerId: !Ref WebSocketCognitoAuthorizer     # Auth is currently handled in the connect handler
             ApiId: !Ref WebSocketApi
+            OperationName: ConnectRoute
             Target: !Sub "integrations/${WebSocketConnectIntegration}"
 
+    # Disconnect route - To handle disconnection events
     WebSocketRouteDisconnect:
         Type: AWS::ApiGatewayV2::Route
         Properties:
             RouteKey: "$disconnect"
             AuthorizationType: NONE
             ApiId: !Ref WebSocketApi
+            OperationName: DisconnectRoute
             Target: !Sub "integrations/${WebSocketDisconnectIntegration}"
 
+    # Default route - To handle all other messages
+    WebSocketRouteDefault:
+        Type: AWS::ApiGatewayV2::Route
+        Properties:
+            RouteKey: "$default"
+            AuthorizationType: NONE
+            ApiId: !Ref WebSocketApi
+            OperationName: DefaultRoute
+            Target: !Sub "integrations/${WebSocketDefaultIntegration}"
+
+    # Integrations
     WebSocketConnectIntegration:
         Type: AWS::ApiGatewayV2::Integration
         Properties:
@@ -501,6 +608,13 @@ Resources:
             IntegrationType: AWS_PROXY
             IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDisconnectFunction.Arn}/invocations"
             ApiId: !Ref WebSocketApi
+    
+    WebSocketDefaultIntegration:
+        Type: AWS::ApiGatewayV2::Integration
+        Properties:
+            IntegrationType: AWS_PROXY
+            IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDefaultFunction.Arn}/invocations"
+            ApiId: !Ref WebSocketApi
 
     WebSocketConnectLambdaPermission:
         Type: AWS::Lambda::Permission
@@ -508,7 +622,7 @@ Resources:
             Action: "lambda:InvokeFunction"
             FunctionName: !GetAtt WebSocketConnectFunction.Arn
             Principal: "apigateway.amazonaws.com"
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${WebSocketApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
 
     WebSocketDisconnectLambdaPermission:
         Type: AWS::Lambda::Permission
@@ -516,21 +630,29 @@ Resources:
             Action: "lambda:InvokeFunction"
             FunctionName: !GetAtt WebSocketDisconnectFunction.Arn
             Principal: "apigateway.amazonaws.com"
-            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:000000000000:${WebSocketApi}/*"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
 
-    # WebSocket Cognito JWT Authorizer
-    WebSocketCognitoAuthorizer:
-        Type: AWS::ApiGatewayV2::Authorizer
+    WebSocketDefaultLambdaPermission:
+        Type: AWS::Lambda::Permission
         Properties:
-            Name: WebSocketCognitoAuthorizer
-            ApiId: !Ref WebSocketApi
-            AuthorizerType: JWT
-            JwtConfiguration:
-                Audience:
-                    - !Ref CognitoUserPoolClient
-                Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
-            IdentitySource:
-                - "route.request.querystring.token"
+            Action: "lambda:InvokeFunction"
+            FunctionName: !GetAtt WebSocketDefaultFunction.Arn
+            Principal: "apigateway.amazonaws.com"
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
+
+    # WebSocket Cognito JWT Authorizer          # This is not working with localstack
+    # WebSocketCognitoAuthorizer:               # Will be used when deployed to AWS and update the connect handler
+    #     Type: AWS::ApiGatewayV2::Authorizer
+    #     Properties:
+    #         Name: WebSocketCognitoAuthorizer
+    #         ApiId: !Ref WebSocketApi
+    #         AuthorizerType: JWT
+    #         JwtConfiguration:
+    #             Audience:
+    #                 - !Ref CognitoUserPoolClient
+    #             Issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+    #         IdentitySource:
+    #             - route.request.querystring.token
 
 
 # =======================================================================
@@ -563,11 +685,11 @@ Outputs:
 
     ApiBaseUrlHttp:
         Description: "Base URL for all REST API endpoints (HTTP)"
-        Value: !Sub "http://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod"
+        Value: !Sub "https://${RestApi}.execute-api.localhost.localstack.cloud:4566/Prod"
 
-    WebSocketUrl:
-        Description: "WebSocket API URL for real-time communication"
-        Value: !Sub "wss://${WebSocketApi}.execute-api.localhost.localstack.cloud:4566/production"
+    WebSocketUrlSecure:
+        Description: "WebSocket URL for real-time communication"
+        Value: !Sub "wss://${WebSocketApi}.execute-api.localhost.localstack.cloud:4510/${StageName}"
 
     RestApiId:
         Description: "REST API Gateway ID"
@@ -604,3 +726,11 @@ Outputs:
     GetLeaderboardFunctionName:
         Description: "Get Leaderboard Lambda Function Name"
         Value: !Ref GetLeaderboardFunction
+
+    RestApiLogGroupName:
+        Description: "CloudWatch Log Group for REST API"
+        Value: !Ref RestApiLogGroup
+
+    WebSocketApiLogGroupName:
+        Description: "CloudWatch Log Group for WebSocket API"
+        Value: !Ref WebSocketApiLogGroup

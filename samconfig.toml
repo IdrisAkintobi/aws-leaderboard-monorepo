@@ -11,9 +11,10 @@ capabilities = "CAPABILITY_IAM"
 image_repositories = []
 resolve_s3 = true
 disable_rollback = true
-parameter_overrides = "ProjectName=\"aws-leaderboard-app-local\" LeaderboardTableName=\"leaderboard-local\" AllowedOrigin=\"http://localhost:5173\""
+parameter_overrides = "ProjectName=\"aws-leaderboard-app-local\" LeaderboardTableName=\"leaderboard-local\" AllowedOrigin=\"https://localhost:5173\" StageName=\"Dev\""
 debug = false
 guided = false
+s3_prefix = "aws-leaderboard-app-local"
 
 [prod]
 [prod.deploy]
