@@ -1,52 +1,77 @@
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
-
+import { GetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { Logger } from "../../utils/logger.js";
-import { dynamoDbDocClient } from "../../utils/utils.js";
-import type { AuthorizerContext } from "../../types/auth.js";
-
+import { dynamoDbDocClient, httpResponse } from "../../utils/utils.js";
 import type { APIGatewayProxyHandler } from "aws-lambda";
+import { SEVEN_DAYS_IN_SECONDS } from "../../utils/constants.js";
+import { cognitoClient } from "../../utils/utils.js";
 
-// WebSocket $connect handler
-// Protected by a CUSTOM Lambda Authorizer configured on $connect.
-// The authorizer validates the token and injects user_id/principalId into requestContext.authorizer.
+// Helper to decode JWT without verification
+function decodeJwt(token: string): { sub: string; exp?: number } {
+    try {
+        const payload = token.split('.')[1] as string;
+        return JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
+    } catch (e) {
+        throw new Error('Invalid token format');
+    }
+}
+
 export const connectHandler: APIGatewayProxyHandler = async (event) => {
     try {
         const connectionId = event.requestContext.connectionId;
-        const requestId = event.requestContext?.requestId ?? "unknown";
-        const connectionsTable = process.env.CONNECTIONS_TABLE_NAME;
+        const connectionsTable = process.env.WS_CONNECTIONS_TABLE_NAME;
 
-        if (!connectionsTable) {
-            Logger.error("Missing CONNECTIONS_TABLE_NAME env var", undefined, { action: "ws_connect" });
-            return { statusCode: 500, body: "Server misconfiguration" };
+        const token = event.queryStringParameters?.token;
+        if (!token) {
+            return httpResponse(401, { error: "Authorization token is required" });
         }
 
-        // Read the authorized user from the authorizer context
-        const authorizer = (event.requestContext.authorizer || {}) as AuthorizerContext;
-        const userId: string | undefined = authorizer.user_id || authorizer.principalId;
-        if (!userId) {
-            Logger.warn("Missing user_id/principalId in authorizer context on $connect", {
-                action: "ws_connect",
-                requestId,
+        // Check token expiry
+        const jwtPayload = decodeJwt(token);
+        if (jwtPayload.exp && Date.now() >= jwtPayload.exp * 1000) {
+            return httpResponse(401, { error: "Token expired" });
+        }
+
+        // Verify token using Cognito
+        let userId: string;
+        try {
+            const command = new GetUserCommand({
+                AccessToken: token,
             });
-            return { statusCode: 401, body: "Unauthorized" };
+            await cognitoClient.send(command); // Validates token
+            userId = jwtPayload.sub; // Use sub from access token
+        } catch (error: any) {
+            if (
+                error.name === 'NotAuthorizedException' ||
+                error.name === 'InvalidParameterException'
+            ) {
+                return httpResponse(401, { error: "Invalid or expired token" });
+            }
+            Logger.error("Cognito GetUser failed", { error: error.message });
+            return httpResponse(500, { error: "Internal server error" });
         }
 
         const now = Math.floor(Date.now() / 1000);
+        const ttl = now + SEVEN_DAYS_IN_SECONDS;
 
         const put = new PutCommand({
             TableName: connectionsTable,
             Item: {
-                user_id: userId,
                 connectionId,
-                isConnected: true,
-                lastSeen: now,
+                userId,
+                ttl,
             },
         });
 
         await dynamoDbDocClient.send(put);
-        return { statusCode: 200, body: "Connected" };
-    } catch (error) {
-        Logger.error("$connect failed", error, { action: "ws_connect" });
-        return { statusCode: 401, body: "Unauthorized" };
+
+        return httpResponse(200, {
+            message: "Connected successfully",
+            connectionId,
+            userId,
+        });
+    } catch (error: any) {
+        Logger.error("WebSocket connection failed", { error: error.message, action: "ws_connect" });
+        return httpResponse(500, { error: "Connection failed" });
     }
 };

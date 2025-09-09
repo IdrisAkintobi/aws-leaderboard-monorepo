@@ -22,6 +22,7 @@ export class EnvironmentValidator {
             "LEADERBOARD_TABLE_NAME",
             "ALLOWED_ORIGIN",
             "WEBSOCKET_API_ENDPOINT",
+            "WS_CONNECTIONS_TABLE_NAME",
         ];
     }
 
