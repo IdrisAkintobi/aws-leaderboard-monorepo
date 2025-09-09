@@ -1,9 +1,9 @@
-import { PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "node:crypto";
 import { MAX_SCORE, SCORE_PAD_WIDTH, TIMESTAMP_PAD_WIDTH } from "../utils/constants.js";
 import { Logger } from "../utils/logger.js";
-import { apiGwManagementApiClient, dynamoDbDocClient } from "../utils/utils.js";
+import { dynamoDbDocClient } from "../utils/utils.js";
+import { broadcastToUser } from "../utils/ws.js";
 
 export interface UserInfo {
     userId: string;
@@ -63,33 +63,18 @@ export const saveScore = async (userInfo: UserInfo, score: number, requestId: st
 };
 
 export const sendHighScoreNotification = async (
-    connectionId: string,
+    userId: string,
     userName: string,
     score: number,
-    requestId: string,
 ): Promise<void> => {
-    try {
-        const websocketMessage = JSON.stringify({
-            message: "realtime-update",
-            data: {
-                user_name: userName,
-                score,
-                notification: `Congratulations! Your score of ${score} is over ${HIGH_SCORE_THRESHOLD}!`,
-            },
-        });
+    const websocketMessage = {
+        action: "high-score-update",
+        data: {
+            user_name: userName,
+            score,
+            notification: `Congratulations! Your score of ${score} is over ${HIGH_SCORE_THRESHOLD}!`,
+        },
+    };
 
-        const postToConnectionCommand = new PostToConnectionCommand({
-            ConnectionId: connectionId,
-            Data: websocketMessage,
-        });
-
-        await apiGwManagementApiClient.send(postToConnectionCommand);
-    } catch (error) {
-        Logger.error("Failed to send high score notification", error, {
-            action: "send_notification",
-            requestId,
-            userName,
-            connectionId,
-        });
-    }
+    await broadcastToUser(userId, websocketMessage);
 };
