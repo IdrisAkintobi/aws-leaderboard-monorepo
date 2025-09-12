@@ -1,38 +1,168 @@
-# AWS Mock Full-Stack App
+# AWS Leaderboard Application
 
-A serverless application with user authentication and a leaderboard, built for AWS Lambda.
+A serverless leaderboard application with user authentication and real-time notifications, built with AWS SAM (Serverless Application Model) using a monorepo structure.
 
-## Key Features
+## Features
 
-- User registration, login, and verification.
-- Score submission and leaderboard.
-- Real-time high-score notifications via WebSockets.
-- Local development with LocalStack and Docker.
+- **User Authentication**: Registration, login, and verification using AWS Cognito
+- **Score Submission**: Submit and track user scores
+- **Real-time Leaderboard**: Live leaderboard updates via WebSockets
+- **High-score Notifications**: Real-time notifications for new high scores
+- **Local Development**: Full local development environment with LocalStack
 
-## Tech Stack
+## Technology Stack
 
-- **Backend**: Node.js, TypeScript
-- **AWS**: Lambda, API Gateway, Cognito, DynamoDB
-- **Local**: LocalStack, Docker, AWS SAM CLI
+### Backend
+
+- **Runtime**: Node.js 20.x with TypeScript
+- **Framework**: AWS SAM (Serverless Application Model)
+- **Authentication**: AWS Cognito
+- **Database**: Amazon DynamoDB
+- **API**: AWS API Gateway (REST + WebSocket)
+- **Compute**: AWS Lambda
+- **Local Development**: LocalStack, Docker
+
+### Frontend
+
+- **Framework**: Vue.js 3
+- **Build Tool**: Vite
+- **Language**: TypeScript
+- **Deployment**: AWS S3 (Static Website)
+
+### Development Tools
+
+- **Package Manager**: npm workspaces
+- **Code Quality**: ESLint, Prettier
+- **Infrastructure**: AWS CloudFormation (via SAM)
+
+## Project Structure
+
+```
+aws-leaderboard-monorepo/
+├── packages/
+│   ├── backend/         # Serverless backend (Lambda functions, API Gateway)
+│   └── frontend/        # Vue.js frontend application
+├── .gitignore          # Root .gitignore
+├── package.json        # Root package.json with npm workspaces
+└── README.md           # This file
+```
 
 ## Prerequisites
 
-- Docker
-- AWS CLI
+- Node.js 20.x or later
+- npm 7+ (for workspaces support)
+- Docker (for LocalStack Pro)
 - AWS SAM CLI
-- Node.js (v20.x+)
+- **samlocal CLI** (LocalStack wrapper for SAM CLI)
+- AWS CLI configured with appropriate credentials
+- **LocalStack Pro License** (required for AWS Cognito support)
 
 ## Getting Started
 
-1.  **Clone & Install**: `git clone <url> && cd aws-mock-app && npm install`
-2.  **Start LocalStack**: `docker-compose up`
-3.  **Build**: `npm run build`
-4.  **Deploy Locally**: `npm run deploy:local`
+1. **Clone the repository**
 
-## Key Commands
+   ```bash
+   git clone <repository-url>
+   cd aws-leaderboard-monorepo
+   ```
 
-- `npm run build`: Compile TypeScript.
-- `npm run deploy:local`: Deploy to LocalStack.
-- `npm run deploy:prod`: Deploy to AWS.
-- `npm run teardown:local`: Remove from LocalStack.
-- `npm run teardown:prod`: Remove from AWS.
+2. **Install samlocal CLI**
+
+   ```bash
+   npm install -g @localstack/samlocal
+   ```
+
+3. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+4. **LocalStack Pro Setup**
+
+   - Get your LocalStack Pro license from [LocalStack](https://localstack.cloud/)
+   - Set your LocalStack Auth Token:
+     ```bash
+     export LOCALSTACK_AUTH_TOKEN=your-auth-token-here
+     ```
+   - Start LocalStack Pro:
+     ```bash
+     docker-compose up -d
+     ```
+
+5. **Environment Setup**
+   - Copy `.env.example` to `.env` in both `packages/backend` and `packages/frontend`
+   - Update the environment variables as needed
+
+## Development
+
+### Backend (Local Development)
+
+⚠️ **Note**: The backend requires LocalStack Pro to be running for Cognito authentication to work.
+
+```bash
+# Make sure LocalStack Pro is running
+docker-compose up -d
+
+# Deploy backend to LocalStack
+cd packages/backend
+npm run deploy:local
+```
+
+### Frontend
+
+```bash
+npm run dev:frontend
+```
+
+## Deployment
+
+### Backend
+
+```bash
+cd packages/backend
+npm run deploy:local    # Deploy to LocalStack
+npm run deploy:prod     # Deploy to AWS
+```
+
+### Frontend
+
+```bash
+cd packages/frontend
+npm run build
+make deploy            # Deploy to AWS S3
+```
+
+## Testing & User Verification
+
+### Manual User Verification (LocalStack)
+
+Since LocalStack doesn't send actual emails, you'll need to manually verify users after registration:
+
+1. **Get the Cognito User Pool ID** from the deployment output
+2. **Verify a user manually**:
+   ```bash
+   awslocal cognito-idp admin-confirm-sign-up \
+     --user-pool-id the-user-pool-id-here \
+     --username user@email.here \
+     --region us-east-1
+   ```
+
+## Available Scripts
+
+- `npm run deploy:backend` - Deploy backend to LocalStack/AWS
+- `npm run dev:frontend` - Start frontend development server
+- `npm run build:all` - Build all packages
+- `npm run lint` - Lint all packages
+- `npm run format` - Format code using Prettier
+
+## Contributing
+
+1. Create a feature branch from `main`
+2. Make your changes
+3. Commit and push your changes
+4. Create a Pull Request
+
+## License
+
+MIT

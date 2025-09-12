@@ -1,0 +1,6 @@
+.env
+.vscode
+.aws-sam
+dist
+node_modules
+samconfig.toml
