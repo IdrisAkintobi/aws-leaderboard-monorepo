@@ -1,8 +1,7 @@
-import { ApiGatewayManagementApi, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
-import { Logger } from './logger.js';
-import { dynamoDbDocClient } from './utils.js';
+import { PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { apiGatewayWebSocketClient } from "../utils/utils.js";
+import { Logger } from "./logger.js";
+import { apiGatewayWebSocketClient, dynamoDbDocClient } from "./utils.js";
 
 export interface WebSocketMessage {
     action: string;
@@ -13,10 +12,7 @@ export interface WebSocketMessage {
 /**
  * Sends a message to a specific WebSocket connection
  */
-export const sendToConnection = async (
-    connectionId: string,
-    message: WebSocketMessage,
-): Promise<boolean> => {
+export const sendToConnection = async (connectionId: string, message: WebSocketMessage): Promise<boolean> => {
     try {
         const postToConnectionCommand = new PostToConnectionCommand({
             ConnectionId: connectionId,
@@ -26,7 +22,7 @@ export const sendToConnection = async (
 
         return true;
     } catch (error: any) {
-        Logger.error('Error sending WebSocket message', error, {
+        Logger.error("Error sending WebSocket message", error, {
             connectionId,
             action: message.action,
         });
@@ -44,11 +40,11 @@ export const broadcastToUser = async (userId: string, message: WebSocketMessage)
         // Find all connections for this user
         const query = new QueryCommand({
             TableName: connectionsTable,
-            IndexName: 'UserIdIndex',
-            KeyConditionExpression: 'userId = :userId',
+            IndexName: "UserIdIndex",
+            KeyConditionExpression: "userId = :userId",
             ExpressionAttributeValues: {
-                ':userId': userId
-            }
+                ":userId": userId,
+            },
         });
 
         const result = await dynamoDbDocClient.send(query);
@@ -64,13 +60,11 @@ export const broadcastToUser = async (userId: string, message: WebSocketMessage)
 
         const results = await Promise.all(sendPromises);
 
-        const sent = results.filter(r => r.success).length;
+        const sent = results.filter((r) => r.success).length;
         const failed = results.length - sent;
 
         if (failed > 0) {
-            const failedConnections = results
-                .filter(r => !r.success)
-                .map(r => r.connectionId);
+            const failedConnections = results.filter((r) => !r.success).map((r) => r.connectionId);
 
             Logger.warn(`Failed to send to ${failed} connections`, {
                 userId,
@@ -79,7 +73,7 @@ export const broadcastToUser = async (userId: string, message: WebSocketMessage)
             });
         }
     } catch (error) {
-        Logger.error('Error broadcasting to user', {
+        Logger.error("Error broadcasting to user", {
             error,
             userId,
             action: message.action,
