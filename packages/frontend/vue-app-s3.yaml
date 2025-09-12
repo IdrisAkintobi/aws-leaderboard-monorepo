@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy Vue app static website to S3
+
+Resources:
+  VueAppBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-vue-app'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  VueAppBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref VueAppBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${VueAppBucket.Arn}/*'
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref VueAppBucket
+  WebsiteURL:
+    Description: URL of the static website
+    Value: !GetAtt VueAppBucket.WebsiteURL
+  VueAppBucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt VueAppBucket.Arn
+  VueAppBucketDomainName:
+    Description: Domain name of the S3 bucket
+    Value: !GetAtt VueAppBucket.DomainName
