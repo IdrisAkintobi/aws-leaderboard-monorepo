@@ -1,0 +1,118 @@
+{
+  // Spell checker configuration
+  "cSpell.words": [
+    "apigatewaymanagementapi",
+    "awslocal",
+    "healthcheck",
+    "LOCALSTACK",
+    "samlocal",
+    "cognito",
+    "dynamodb",
+    "leaderboard",
+    "monorepo"
+  ],
+
+  // TypeScript configuration
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.suggest.autoImports": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+
+  // ESLint configuration
+  "eslint.workingDirectories": ["./packages/backend", "./packages/frontend"],
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact",
+    "vue"
+  ],
+
+  // Prettier configuration
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": null,
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[vue]": {
+    "editor.defaultFormatter": "Vue.volar"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "vscode.markdown-language-features"
+  },
+
+  // File associations
+  "files.associations": {
+    "*.yaml": "yaml",
+    "*.yml": "yaml",
+    "template*.yaml": "cloudformation",
+    "samconfig.toml": "toml"
+  },
+
+  // Search configuration
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.aws-sam": true,
+    "**/volume": true,
+    "**/.git": true
+  },
+
+  // File watcher configuration
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.aws-sam/**": true,
+    "**/volume/**": true
+  },
+
+  // Explorer configuration
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml",
+    "tsconfig.json": "tsconfig.*.json",
+    "*.js": "${capture}.js.map, ${capture}.min.js, ${capture}.d.ts",
+    "*.ts": "${capture}.js, ${capture}.d.ts.map, ${capture}.d.ts, ${capture}.js.map"
+  },
+
+  // Terminal configuration
+  "terminal.integrated.env.osx": {
+    "LOCALSTACK_AUTH_TOKEN": "${env:LOCALSTACK_AUTH_TOKEN}"
+  },
+  "terminal.integrated.env.linux": {
+    "LOCALSTACK_AUTH_TOKEN": "${env:LOCALSTACK_AUTH_TOKEN}"
+  },
+  "terminal.integrated.env.windows": {
+    "LOCALSTACK_AUTH_TOKEN": "${env:LOCALSTACK_AUTH_TOKEN}"
+  },
+
+  // Git configuration
+  "git.ignoreLimitWarning": true,
+
+  // Vue.js configuration
+  "vetur.validation.template": false,
+  "vetur.validation.script": false,
+  "vetur.validation.style": false,
+
+  // AWS SAM configuration
+  "aws.samcli.location": "/usr/local/bin/sam",
+
+  // Multi-root workspace configuration
+  "extensions.ignoreRecommendations": false,
+  "workbench.editor.enablePreview": false,
+
+  // Auto-save configuration
+  "files.autoSave": "onFocusChange",
+
+  // Breadcrumbs
+  "breadcrumbs.enabled": true,
+
+  // Minimap
+  "editor.minimap.enabled": true,
+  "editor.minimap.showSlider": "always"
+}
