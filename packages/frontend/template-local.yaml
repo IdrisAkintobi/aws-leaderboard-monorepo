@@ -1,11 +1,17 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Deploy Vue app static website to S3
+Description: Deploy Vue app static website to S3 - LocalStack Edition
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: "vue-app"
+    Description: A unique name for the project
 
 Resources:
   VueAppBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub '${AWS::StackName}-vue-app'
+      BucketName: !Sub '${ProjectName}-${AWS::StackName}'
       WebsiteConfiguration:
         IndexDocument: index.html
         ErrorDocument: index.html
@@ -32,12 +38,23 @@ Outputs:
   BucketName:
     Description: Name of the S3 bucket
     Value: !Ref VueAppBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+  
   WebsiteURL:
-    Description: URL of the static website
-    Value: !GetAtt VueAppBucket.WebsiteURL
+    Description: URL of the static website (LocalStack)
+    Value: !Sub "http://${VueAppBucket}.s3-website.localhost.localstack.cloud:4566"
+    Export:
+      Name: !Sub "${AWS::StackName}-WebsiteURL"
+  
   VueAppBucketArn:
     Description: ARN of the S3 bucket
     Value: !GetAtt VueAppBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"
+  
   VueAppBucketDomainName:
-    Description: Domain name of the S3 bucket
-    Value: !GetAtt VueAppBucket.DomainName
+    Description: Domain name of the S3 bucket (LocalStack)
+    Value: !Sub "${VueAppBucket}.s3.localhost.localstack.cloud"
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketDomainName"
