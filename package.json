@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "deploy:local:backend": "npm run deploy:local --workspace=@aws-sam/backend",
-    "dev:frontend": "npm run dev --workspace=@aws-sam/frontend",
+    "deploy:backend": "npm run deploy --workspace=@aws-sam/backend",
+    "deploy:frontend": "npm run deploy --workspace=@aws-sam/frontend",
     "build:all": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\""

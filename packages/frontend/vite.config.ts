@@ -15,4 +15,8 @@ export default defineConfig({
     // Make sure the server is accessible over the local network
     host: '0.0.0.0',
   },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+  },
 });
